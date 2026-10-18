@@ -26,6 +26,9 @@ export const ACTIONS = {
   pickup: (interact, player) => pickUpKit(player),
   role: (interact, player) => pickRole(player, interact.takes),
   bell: () => ringBell(),
+  cabinBell: () => ringCabinBell(),
+  steam: () => ventSteam(),
+  stoke: () => stokeFurnace(),
   shout: (interact, player) => shoutDownTube(player),
   hat: (interact, player) => nextHat(player),
   lamps: () => toggleLamps(),
@@ -37,6 +40,21 @@ export const ACTIONS = {
 
 export function ringBell() {
   state.bell += 1;
+  return true;
+}
+
+export function ringCabinBell() {
+  state.cabinBell += 1;
+  return true;
+}
+
+export function ventSteam() {
+  state.steam += 1;
+  return true;
+}
+
+export function stokeFurnace() {
+  state.stoke += 1;
   return true;
 }
 

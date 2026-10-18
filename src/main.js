@@ -4,6 +4,9 @@
 import * as THREE from 'three';
 import { buildShip, addLights, addSky, applyState, groundHeight } from './world.js';
 import { loadDockModel, updateDock, resetDockEffects } from './dock.js';
+import { loadHelmModel, updateHelm, resetHelmEffects } from './helm.js';
+import { loadPowerModel, updatePower, resetPowerEffects } from './power.js';
+import { loadEngineModel, updateEngineRoom, resetEngineEffects } from './engine.js';
 import { LocalPlayer, RemoteCrew, createBody, stepBody } from './player.js';
 import { InteractionView, HostInteractions } from './interact.js';
 import { Net, makeCode } from './network.js';
@@ -41,6 +44,9 @@ const world = buildShip();
 const ship = world.ship;
 scene.add(ship);
 loadDockModel(world); // swaps the coded dock for the Blender one when it arrives
+loadHelmModel(world); // furnishes the pilot's cabin
+loadPowerModel(world); // furnishes the engineer's power room
+loadEngineModel(world); // furnishes the mechanic's engine room
 
 const player = new LocalPlayer({ ship, camera, colliders: world.colliders });
 const crew = new RemoteCrew(ship, RULES.stateHz);
@@ -249,6 +255,9 @@ function leaveShip(message = '') {
   playUi.hidden = true;
   player.exit(scene);
   resetDockEffects();
+  resetHelmEffects();
+  resetPowerEffects();
+  resetEngineEffects();
   note(message);
   showScreen('menu');
 }
@@ -264,14 +273,6 @@ player.controls.addEventListener('unlock', () => {
 });
 document.getElementById('clickToPlay').addEventListener('click', () => player.controls.lock());
 document.getElementById('leaveShip').addEventListener('click', () => leaveShip());
-// H hides the overlays, H again brings them back. Ignored while a field
-// has focus, or typing a name would blank the screen.
-addEventListener('keydown', (e) => {
-  if (e.code !== 'KeyH' || e.repeat) return;
-  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-  document.body.classList.toggle('no-hud');
-});
-
 document.getElementById('resultBack').addEventListener('click', () => {
   if (!sessionActive) {
     showScreen('menu');
@@ -513,6 +514,9 @@ function loop() {
   applyState(world, state, state.players[local.id]?.atWheel ?? false);
   updateKit();
   updateDock(world, state, local, now);
+  updateHelm(world, state, { camera, view, player, now, dt });
+  updatePower(world, state, { now, dt });
+  updateEngineRoom(world, state, { now, dt });
 
   renderer.render(scene, camera);
   requestAnimationFrame(loop);

@@ -92,6 +92,9 @@ export const state = {
 
   // The dock's toys, all shared so everyone sees the same thing.
   route: 0, // index into ROUTES
+  stoke: 0, // stokes of the engine room's furnace
+  steam: 0, // turns of the power room's steam valve
+  cabinBell: 0, // the helm's bell, counted apart from the dock's
   bell: 0, // rings so far: clients swing the bell when it goes up
   shout: { count: 0, name: '', line: '' }, // the speaking tube
   lampsOn: true,
@@ -135,6 +138,9 @@ export function snapshot() {
     kit: state.kit,
     route: state.route,
     bell: state.bell,
+    cabinBell: state.cabinBell,
+    steam: state.steam,
+    stoke: state.stoke,
     shout: state.shout,
     lampsOn: state.lampsOn,
     props: state.props,
@@ -159,6 +165,9 @@ export function applySnapshot(s) {
   state.kit = s.kit ?? state.kit;
   state.route = s.route ?? state.route;
   state.bell = s.bell ?? state.bell;
+  state.cabinBell = s.cabinBell ?? state.cabinBell;
+  state.steam = s.steam ?? state.steam;
+  state.stoke = s.stoke ?? state.stoke;
   state.shout = s.shout ?? state.shout;
   state.lampsOn = s.lampsOn ?? state.lampsOn;
   state.props = s.props ?? state.props;

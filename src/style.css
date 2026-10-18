@@ -332,14 +332,3 @@ button.big {
   border-radius: 12px;
   box-shadow: 0 4px 0 #3b2516;
 }
-
-/* H hides the overlays for a clean look at the ship. The crosshair and
-   anything you have to click stay, so the game is still playable. */
-body.no-hud #status,
-body.no-hud #banner,
-body.no-hud #roundHud,
-body.no-hud #prompt,
-body.no-hud #progress,
-body.no-hud .hud {
-  display: none !important;
-}
