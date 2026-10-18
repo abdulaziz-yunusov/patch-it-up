@@ -1,0 +1,12 @@
+﻿{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "chrome",
+      "request": "launch",
+      "name": "Debug Patch It Up",
+      "url": "https://localhost:5173/patch-it-up/",
+      "webRoot": "${workspaceFolder}"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Patch It Up!</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #222846; font-family: system-ui, sans-serif; }
+      #start { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(20,24,48,0.6); }
+      #start button { padding: 24px 40px; font-size: 32px; font-weight: 800; border-radius: 18px; border: 5px solid #3b2516; background: #f2a33a; color: #2a1608; cursor: pointer; }
+      #hud { position: fixed; left: 16px; bottom: 16px; color: #fff4dc; font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <div id="start"><button type="button">Click to play</button></div>
+    <div id="hud">WASD move Â· mouse look Â· Esc to free the mouse</div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
