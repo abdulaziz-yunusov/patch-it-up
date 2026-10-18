@@ -129,6 +129,9 @@ function drawAll() {
     else input.value = String(value);
     if (input.type === 'range') showValue(input);
   }
+  // The strength slider only means something while shake is on.
+  $('set-roll').disabled = !settings.cameraShake;
+  $('rollRow').classList.toggle('soon', !settings.cameraShake);
   drawBindings();
 }
 

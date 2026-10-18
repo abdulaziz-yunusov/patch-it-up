@@ -492,7 +492,14 @@
               </div>
               <div class="set-divider"></div>
               <div class="set-row">
-                <label for="set-roll" class="set-label">Camera roll and shake</label>
+                <div class="set-text">
+                  <label for="set-shake" class="set-label">Camera roll and shake</label>
+                  <span class="set-sub">Turn off to keep the camera level while the ship rocks.</span>
+                </div>
+                <input id="set-shake" type="checkbox" class="set-check" data-setting="cameraShake" />
+              </div>
+              <div id="rollRow" class="set-row">
+                <label for="set-roll" class="set-label">Shake strength</label>
                 <input id="set-roll" type="range" min="0" max="100" step="1" data-setting="cameraMotion" data-unit="%" />
                 <output for="set-roll" class="set-value"></output>
               </div>

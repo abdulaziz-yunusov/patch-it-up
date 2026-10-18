@@ -679,7 +679,7 @@ function loop() {
   // up the storm builds, the bow lifts, and the deck shudders as she
   // tears free of the moorings.
   const climbed = takeoffProgress(state);
-  const motion = settings.cameraMotion / 100;
+  const motion = settings.cameraShake ? settings.cameraMotion / 100 : 0;
   const rocking = (state.phase === 'result' ? 0 : climbed) * motion;
   const noseUp = state.phase === 'takeoff' ? Math.sin(climbed * Math.PI) * 0.05 * motion : 0;
   const lurch = state.phase === 'takeoff' ? Math.max(0, 1 - state.takeoff / 1.2) * Math.sin(t * 40) * 0.012 * motion : 0;

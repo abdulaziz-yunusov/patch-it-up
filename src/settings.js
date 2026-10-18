@@ -56,7 +56,8 @@ const SPEC = {
   colorblind: { def: 'off', check: oneOf('off', 'redgreen', 'blueyellow') },
   roleSymbols: { def: true, check: bool },
   subtitles: { def: true, check: bool },
-  cameraMotion: { def: 100, check: range(0, 100) },
+  cameraShake: { def: true, check: bool }, // off: no roll or shake at all
+  cameraMotion: { def: 100, check: range(0, 100) }, // how much, when it is on
   headBob: { def: true, check: bool },
   textSize: { def: 'normal', check: oneOf('normal', 'large', 'xlarge') },
 };
