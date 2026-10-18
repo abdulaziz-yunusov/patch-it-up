@@ -1,8 +1,8 @@
 // Creates the renderer and camera, runs the loop, switches screens.
 
 import * as THREE from 'three';
-import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 import { buildShip, addLights, addSky } from './world.js';
+import { LocalPlayer } from './player.js';
 import { showScreen, currentScreen } from './screens.js';
 import { initMenu, playerName } from './menu.js';
 
@@ -17,30 +17,25 @@ addLights(scene);
 
 const camera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 0.1, 400);
 
-// world.colliders is the list of solid boxes step 3 walks into.
 const world = buildShip();
 const ship = world.ship;
 scene.add(ship);
 
-// Walking around is the step 3 job of player.js; this is the prototype kept alive
-// so "Host game" and "Climb aboard" lead somewhere you can run.
-const controls = new PointerLockControls(camera, document.body);
+// One local player for now; the other two arrive over the network in step 5.
+const player = new LocalPlayer({ ship, camera, colliders: world.colliders });
 const lockOverlay = document.getElementById('lockOverlay');
-const keys = {};
 
-controls.addEventListener('lock', () => (lockOverlay.hidden = true));
-controls.addEventListener('unlock', () => {
+player.controls.addEventListener('lock', () => (lockOverlay.hidden = true));
+player.controls.addEventListener('unlock', () => {
   if (currentScreen() === 'flight') lockOverlay.hidden = false;
 });
 
-document.getElementById('clickToPlay').addEventListener('click', () => controls.lock());
+document.getElementById('clickToPlay').addEventListener('click', () => player.controls.lock());
 document.getElementById('leaveShip').addEventListener('click', () => {
-  controls.unlock();
+  player.controls.unlock();
+  player.exit(scene);
   showScreen('menu');
 });
-
-addEventListener('keydown', (e) => (keys[e.code] = true));
-addEventListener('keyup', (e) => (keys[e.code] = false));
 
 initMenu({
   onHost: () => {
@@ -56,8 +51,8 @@ initMenu({
 });
 
 function boardShip() {
-  camera.position.set(-10, 1.6, 0);
-  camera.rotation.set(0, -Math.PI / 2, 0);
+  // Stern of the engine room, facing the bow.
+  player.enter(-10, 0);
   lockOverlay.hidden = false;
   showScreen('flight');
 }
@@ -72,14 +67,6 @@ function orbitShip(t) {
   camera.rotation.y += 0.42;
 }
 
-function walk(dt) {
-  const step = 4 * dt;
-  if (keys.KeyW) controls.moveForward(step);
-  if (keys.KeyS) controls.moveForward(-step);
-  if (keys.KeyD) controls.moveRight(step);
-  if (keys.KeyA) controls.moveRight(-step);
-}
-
 const clock = new THREE.Clock();
 function loop() {
   const dt = clock.getDelta();
@@ -90,7 +77,7 @@ function loop() {
   ship.rotation.x = Math.sin(t * 0.5) * 0.03;
 
   if (currentScreen() === 'flight') {
-    if (controls.isLocked) walk(dt);
+    player.update(dt);
   } else {
     orbitShip(t);
   }
@@ -98,6 +85,10 @@ function loop() {
   renderer.render(scene, camera);
   requestAnimationFrame(loop);
 }
+
+// Dev-only handle for driving the game from the console or a test script.
+// The F3 debug view of the plan's testing notes can hang off this later.
+if (import.meta.env.DEV) window.patch = { scene, camera, ship, world, player };
 
 showScreen('menu');
 loop();
