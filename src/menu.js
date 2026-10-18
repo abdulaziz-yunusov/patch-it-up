@@ -1,23 +1,23 @@
 // Home page: the name field (kept between visits) and the four buttons.
 
 import { showScreen } from './screens.js';
+import { load, save } from './save.js';
 
-const NAME_KEY = 'patchitup.name';
 const DEFAULT_NAME = 'Deckhand';
 
 export function playerName() {
-  return localStorage.getItem(NAME_KEY)?.trim() || DEFAULT_NAME;
+  return load().name?.trim() || DEFAULT_NAME;
 }
 
-// onHost() runs for "Host game", onJoin(code) for "Climb aboard".
-// Step 5 replaces both with real PeerJS calls.
+// onHost() opens a room, onJoin(code) connects to one.
 export function initMenu({ onHost, onJoin }) {
   const nameInput = document.getElementById('playerName');
   const codeInput = document.getElementById('roomCode');
   const joinError = document.getElementById('joinError');
+  const menuNote = document.getElementById('menuNote');
 
-  nameInput.value = localStorage.getItem(NAME_KEY) ?? '';
-  nameInput.addEventListener('input', () => localStorage.setItem(NAME_KEY, nameInput.value.trim()));
+  nameInput.value = load().name ?? '';
+  nameInput.addEventListener('input', () => save({ ...load(), name: nameInput.value.trim() }));
 
   document.getElementById('hostGame').addEventListener('click', () => onHost());
 
@@ -27,8 +27,12 @@ export function initMenu({ onHost, onJoin }) {
     codeInput.focus();
   });
 
+  // On the page, not in an alert box: a desktop build has no browser dialogs.
   for (const id of ['training', 'settings']) {
-    document.getElementById(id).addEventListener('click', () => alert('Coming soon'));
+    document.getElementById(id).addEventListener('click', () => {
+      menuNote.textContent = `${id[0].toUpperCase()}${id.slice(1)} is coming soon`;
+      menuNote.hidden = false;
+    });
   }
 
   // Room codes are always upper case, so typing is forgiving.
