@@ -248,10 +248,11 @@ button.big {
   background: #f2a33a;
 }
 
+/* Bottom right, clear of the round HUD at the top. */
 #status {
   position: absolute;
   right: 16px;
-  top: 16px;
+  bottom: 16px;
   white-space: pre-line;
   padding: 10px 14px;
   font-weight: 700;
@@ -262,3 +263,54 @@ button.big {
 }
 
 
+
+/* The round: timer and altitude, dead centre at the top. */
+#roundHud {
+  position: absolute;
+  left: 50%;
+  top: 16px;
+  transform: translateX(-50%);
+  width: min(70vw, 340px);
+  text-align: center;
+}
+
+#timer {
+  font-size: 30px;
+  font-weight: 800;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+}
+
+#altitudeBar {
+  height: 18px;
+  margin-top: 6px;
+  padding: 3px;
+  background: rgba(20, 24, 48, 0.75);
+  border: 3px solid #3b2516;
+  border-radius: 12px;
+}
+
+#altitudeFill {
+  height: 100%;
+  width: 100%;
+  border-radius: 7px;
+  background: #49b97a;
+  transition: background-color 300ms linear;
+}
+
+#altitudeFill.low {
+  background: #e2574c;
+}
+
+#altitudeText {
+  margin-top: 4px;
+  font-weight: 700;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+}
+
+/* A red wash when the hull tears open. */
+#flash {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  background: radial-gradient(circle, rgba(226, 87, 76, 0) 35%, rgba(226, 87, 76, 0.85) 100%);
+}

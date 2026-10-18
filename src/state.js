@@ -5,6 +5,19 @@
 import { PLAYER } from './player.js';
 
 export const RULES = {
+  // The round, as the plan's table sets it out.
+  roundSeconds: 180,
+  altitudeStart: 100,
+  altitudeLossPerBreach: 2, // per cent per second, per open breach
+  breachEvery: [8, 15], // seconds between new breaches
+  rockEvery: 10, // seconds between rocks
+  rockDistance: 42, // metres ahead when one appears
+  rockSpeed: 6, // metres per second
+  rockHitWidth: 0.35, // how closely a rock has to line up to hit
+  shieldThreshold: 3, // shields at 3+ turn half the hits aside
+  enginesLow: 1, // engines at 0 or 1 halve the pilot's steering
+  driftRate: 0.55, // how fast a full helm slides the ship aside
+
   maxPerTube: 4,
   patchSeconds: 2.5,
   steerRate: 0.9,
@@ -19,6 +32,9 @@ export const RULES = {
 
 export const ROLES = ['mechanic', 'engineer', 'pilot'];
 
+// What each power tube feeds. Lift has no rule of its own yet.
+export const TUBES = ['engines', 'shields', 'lift'];
+
 // On the dock, in front of the lockers. y = the platform (-1.2) plus the
 // sphere's radius, which is where a standing player's middle sits.
 export const SPAWNS = [
@@ -29,13 +45,20 @@ export const SPAWNS = [
 export const KIT_HOME = { x: -6.6, y: 0.15, z: 1.6 };
 
 export const state = {
-  phase: 'lobby', // 'lobby' at the dock, 'flight' once the ship casts off
+  phase: 'lobby', // 'lobby' at the dock, 'flight' in the air, 'result' after
   countdown: null, // seconds left once the whole crew is aboard
   code: '', // the room code, painted on the board at the dock
   players: {}, // id -> { id, name, role, x, y, z, yaw, atWheel }
-  power: [2, 2, 2],
-  breaches: { b0: false, b1: false, b2: false },
+  power: [2, 2, 2], // units in the engine, shield and lift tubes
+  breaches: {}, // id -> true while that hole is open
+  opened: 0, // how many have torn open all round: clients flash on a change
+  patched: 0, // and how many the mechanic has closed
   steering: 0, // -1 (hard to port) .. 1 (hard to starboard)
+  drift: 0, // where the helm has put the ship, -1 .. 1
+  rock: { lane: 0, distance: 0, active: false },
+  altitude: RULES.altitudeStart,
+  timeLeft: RULES.roundSeconds,
+  result: null, // 'landed' or 'down', once the round ends
   kit: { heldBy: null, ...KIT_HOME },
 };
 
@@ -64,7 +87,14 @@ export function snapshot() {
     players: state.players,
     power: state.power,
     breaches: state.breaches,
+    opened: state.opened,
+    patched: state.patched,
     steering: state.steering,
+    drift: state.drift,
+    rock: state.rock,
+    altitude: state.altitude,
+    timeLeft: state.timeLeft,
+    result: state.result,
     kit: state.kit,
   };
 }
@@ -76,7 +106,14 @@ export function applySnapshot(s) {
   state.players = s.players ?? {};
   state.power = s.power ?? state.power;
   state.breaches = s.breaches ?? state.breaches;
+  state.opened = s.opened ?? state.opened;
+  state.patched = s.patched ?? state.patched;
   state.steering = s.steering ?? 0;
+  state.drift = s.drift ?? 0;
+  state.rock = s.rock ?? state.rock;
+  state.altitude = s.altitude ?? state.altitude;
+  state.timeLeft = s.timeLeft ?? state.timeLeft;
+  state.result = s.result ?? null;
   state.kit = s.kit ?? state.kit;
 }
 

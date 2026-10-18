@@ -46,7 +46,6 @@ export function initMenu({ onHost, onJoin }) {
 
   document.getElementById('climbAboard').addEventListener('click', climbAboard);
   document.getElementById('joinBack').addEventListener('click', () => showScreen('menu'));
-  document.getElementById('resultBack').addEventListener('click', () => showScreen('menu'));
 
   function climbAboard() {
     const code = codeInput.value.trim();

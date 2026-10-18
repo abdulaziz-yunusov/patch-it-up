@@ -40,12 +40,19 @@ export const ROOMS = [
   { id: 'helm', name: 'Helm', x: 8, color: '#4a86e8', floor: '#35548e' },
 ];
 
-// Where the hull springs a leak. Step 7 opens these during a flight;
-// for now all three are open so there is always something to patch.
+// Where the hull can spring a leak: three spots in each room, clear of
+// the stations and of the cargo doorway. The host opens them one at a
+// time during a flight.
 export const BREACH_SPOTS = [
-  { id: 'b0', x: -8.5, z: 1.9 },
-  { id: 'b1', x: -2.2, z: -1.9 }, // clear of the cargo doorway
-  { id: 'b2', x: 7.4, z: -1.9 },
+  { id: 'e0', room: 'engine', x: -9.5, z: 1.9 },
+  { id: 'e1', room: 'engine', x: -6.5, z: 1.6 },
+  { id: 'e2', room: 'engine', x: -10.5, z: -1.5 },
+  { id: 'p0', room: 'power', x: -2.6, z: 1.6 },
+  { id: 'p1', room: 'power', x: 2.6, z: -1.6 },
+  { id: 'p2', room: 'power', x: 0.2, z: 0.6 },
+  { id: 'h0', room: 'helm', x: 6.2, z: 1.8 },
+  { id: 'h1', room: 'helm', x: 9.5, z: -1.8 },
+  { id: 'h2', room: 'helm', x: 7, z: -1.2 },
 ];
 
 // One locker per role, in role order, along the far rail of the dock.
@@ -190,10 +197,22 @@ export function buildShip() {
   );
   balloon.scale.set(14, 4, 5);
 
+  // The rock the pilot dodges, waiting out of sight until one is thrown.
+  const rock = part(
+    box(1.6, 1.6, 1.6),
+    new THREE.MeshStandardMaterial({ color: '#6f6a63', flatShading: true }),
+    0,
+    1.7,
+    0
+  );
+  rock.name = 'rock';
+  rock.visible = false;
+
   const dock = buildDock(ship, box);
 
   return {
     ship,
+    rock,
     colliders,
     breaches,
     hatch,
@@ -214,7 +233,26 @@ export function applyState(world, state, localAtWheel = false) {
     tube.scale.y = height;
     tube.position.y = height / 2;
   });
-  for (const [id, mesh] of Object.entries(world.breaches)) mesh.visible = !state.breaches[id];
+  // A breach is drawn while it is open; patching it closes the hole.
+  // The prompt goes with it, so a mended spot cannot be patched twice.
+  for (const [id, mesh] of Object.entries(world.breaches)) {
+    const open = !!state.breaches[id];
+    mesh.visible = open;
+    mesh.userData.interact = open ? mesh.userData.openInteract : null;
+  }
+
+  // The rock flies at the bow window, sliding aside as the helm answers.
+  world.rock.visible = state.rock.active;
+  if (state.rock.active) {
+    // High enough to clear the wheel: a rock lined up to hit is the one
+    // the pilot most needs to see, and the wheel sits dead centre.
+    world.rock.position.set(
+      SHIP.length / 2 + state.rock.distance,
+      2.5,
+      (state.rock.lane - state.drift) * 3.2
+    );
+    world.rock.rotation.set(state.rock.distance * 0.08, state.rock.distance * 0.05, 0);
+  }
   world.wheelDisc.rotation.y = state.steering * 2.2;
   world.wheelMount.userData.interact.label = localAtWheel ? 'Leave the wheel' : 'Take the wheel';
 
@@ -241,13 +279,15 @@ function buildBreaches(ship, part, box) {
   for (const spot of BREACH_SPOTS) {
     const mesh = part(box(1, 0.08, 1), torn, spot.x, 0.04, spot.z);
     mesh.name = spot.id;
-    mesh.userData.interact = {
+    mesh.visible = false; // nothing is leaking until the host says so
+    mesh.userData.openInteract = {
       label: 'Patch',
       role: 'mechanic',
       action: 'patch',
       hold: RULES.patchSeconds,
       id: spot.id,
     };
+    mesh.userData.interact = null;
     breaches[spot.id] = mesh;
   }
   return breaches;
@@ -294,11 +334,11 @@ function buildStations(ship, colliders, solid, box, metal) {
     levers.push(lever);
   });
 
-  // Helm: the wheel on its mount, spokes so you can see it turn.
+  // Helm: the wheel on its mount, spokes so you can see it turn. It sits
+  // low, below the pilot's sightline, or it hides the one rock that is
+  // lined up to hit - the one they most need to see.
   const wheelMount = new THREE.Group();
-  // At 1.35 m the wheel meets a level crosshair, and a 0.4 m disc still
-  // leaves most of the window visible around it.
-  wheelMount.position.set(10.4, 1.35, 0);
+  wheelMount.position.set(10.4, 1, 0);
   wheelMount.rotation.z = Math.PI / 2; // tip the disc upright, facing the bow
   wheelMount.name = 'wheel';
   wheelMount.userData.interact = { label: 'Take the wheel', role: 'pilot', action: 'wheel' };
@@ -314,7 +354,17 @@ function buildStations(ship, colliders, solid, box, metal) {
   wheelMount.updateMatrixWorld(true);
   colliders.push(new THREE.Box3().setFromObject(wheelMount));
 
-  return { tubes, levers, wheelMount, wheelDisc, kit };
+  // The wheel is now too low for a level crosshair, so the station is
+  // taken and left through an invisible pane at eye height. Three still
+  // raycasts meshes it does not draw, and nothing is hidden behind it.
+  const helmStation = new THREE.Mesh(box(0.1, 0.9, 1.4), brass);
+  helmStation.position.set(10.4, 1.7, 0);
+  helmStation.name = 'helmStation';
+  helmStation.visible = false;
+  helmStation.userData.interact = wheelMount.userData.interact; // one label, two targets
+  ship.add(helmStation);
+
+  return { tubes, levers, wheelMount, wheelDisc, helmStation, kit };
 }
 
 // The dock: a plank platform with a rail round it, three lockers, the

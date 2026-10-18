@@ -8,6 +8,7 @@ import { InteractionView, HostInteractions } from './interact.js';
 import { Net, makeCode } from './network.js';
 import {
   RULES,
+  SPAWNS,
   applySnapshot,
   local,
   newPlayer,
@@ -53,6 +54,12 @@ const bodies = new Map(); // host only: player id -> body it simulates
 const inputs = new Map(); // host only: player id -> the input last heard
 
 const playUi = document.getElementById('play');
+const timerText = document.getElementById('timer');
+const altitudeFill = document.getElementById('altitudeFill');
+const altitudeText = document.getElementById('altitudeText');
+const flash = document.getElementById('flash');
+const resultTitle = document.getElementById('resultTitle');
+const resultDetail = document.getElementById('resultDetail');
 const lockOverlay = document.getElementById('lockOverlay');
 const statusLine = document.getElementById('status');
 const banner = document.getElementById('banner');
@@ -60,7 +67,12 @@ const menuNote = document.getElementById('menuNote');
 const joinError = document.getElementById('joinError');
 const KIT_INTERACT = world.kit.userData.interact;
 
-const inWorld = () => currentScreen() === 'lobby' || currentScreen() === 'flight';
+// True from the moment you board until you are back at the menu; the
+// phase (lobby, flight, result) says which screen to show.
+let sessionActive = false;
+let againRequested = false;
+let seenOpened = 0; // to flash when a new hole tears
+let flashUntil = 0;
 
 // Where the floor is, and what blocks you, both depend on the phase: at
 // the dock there is a platform, a gangplank and an open cargo door.
@@ -78,7 +90,7 @@ const emptyInput = () => ({
   use: false,
   useTap: false,
   drop: false,
-  role: null,
+  again: false,
 });
 
 // --- the host's side of a session ------------------------------------
@@ -126,7 +138,6 @@ net.onState = (incoming) => {
   if (!me) return;
   player.body.atWheel = me.atWheel;
   player.correct(me.x, me.y, me.z, RULES.correction);
-  showScreen(state.phase === 'flight' ? 'flight' : 'lobby');
 };
 
 net.onLost = () => leaveShip('The ship went out of range');
@@ -198,11 +209,29 @@ function boardShip(me) {
   player.enter(me.x, me.y, me.z, me.yaw);
   crew.sync(state.players, local.id);
   lockOverlay.hidden = false;
-  playUi.hidden = false;
-  showScreen(state.phase === 'flight' ? 'flight' : 'lobby');
+  sessionActive = true;
+  seenOpened = state.opened;
+  syncPhaseUi();
+}
+
+// One screen per phase, and the result panel needs the mouse back.
+function syncPhaseUi() {
+  if (currentScreen() !== state.phase) showScreen(state.phase);
+  const playing = state.phase !== 'result';
+  playUi.hidden = !playing;
+  if (!playing) {
+    if (player.controls.isLocked) player.controls.unlock();
+    resultTitle.textContent = state.result === 'landed' ? 'Landed!' : 'The ship went down';
+    const holes = state.patched === 1 ? '1 breach' : `${state.patched} breaches`;
+    resultDetail.textContent =
+      state.result === 'landed'
+        ? `Three minutes in the air, ${holes} patched.`
+        : `${holes} patched before the altitude ran out.`;
+  }
 }
 
 function leaveShip(message = '') {
+  sessionActive = false;
   player.controls.unlock();
   net.close();
   state.players = {};
@@ -226,10 +255,19 @@ function note(message) {
 
 player.controls.addEventListener('lock', () => (lockOverlay.hidden = true));
 player.controls.addEventListener('unlock', () => {
-  if (inWorld()) lockOverlay.hidden = false;
+  if (sessionActive && state.phase !== 'result') lockOverlay.hidden = false;
 });
 document.getElementById('clickToPlay').addEventListener('click', () => player.controls.lock());
 document.getElementById('leaveShip').addEventListener('click', () => leaveShip());
+document.getElementById('resultBack').addEventListener('click', () => {
+  if (!sessionActive) {
+    showScreen('menu');
+    return;
+  }
+  // The host decides; a joiner asks with its next input.
+  if (local.isHost) returnToDock();
+  else againRequested = true;
+});
 
 // --- the loop --------------------------------------------------------
 
@@ -243,7 +281,7 @@ function queue(input) {
   pending.use = input.use;
   pending.useTap = pending.useTap || input.useTap;
   pending.drop = pending.drop || input.drop;
-  if (input.role !== null) pending.role = input.role;
+  pending.again = pending.again || input.again;
 }
 
 function hostTick(dt, now) {
@@ -270,10 +308,14 @@ function hostTick(dt, now) {
       game.dropKit(seated, body, input.yaw ?? 0);
       input.drop = false;
     }
+    if (input.again) {
+      input.again = false;
+      returnToDock();
+    }
   }
 
-  game.tickLobby(dt);
-  if (state.phase === 'flight' && currentScreen() !== 'flight') showScreen('flight');
+  if (state.phase === 'lobby') game.tickLobby(dt);
+  else if (state.phase === 'flight') game.tickFlight(dt);
 
   hostInteractions.update(dt, state.players, bodies, inputs, {
     mayUse: game.mayUse,
@@ -290,6 +332,41 @@ function hostTick(dt, now) {
 
 // The kit lives wherever the state says: on the deck, in your hands, or
 // in someone else's.
+// The host sends everyone back down the gangplank for another round.
+function returnToDock() {
+  if (!game.backToDock()) return;
+  Object.values(state.players).forEach((seated, index) => {
+    const spawn = SPAWNS[index % SPAWNS.length];
+    seated.x = spawn.x;
+    seated.y = spawn.y;
+    seated.z = spawn.z;
+    const body = bodies.get(seated.id);
+    if (body) {
+      body.position.set(spawn.x, spawn.y, spawn.z);
+      body.velocityY = 0;
+      body.atWheel = false;
+    }
+    if (seated.id === local.id) player.enter(spawn.x, spawn.y, spawn.z, 0);
+  });
+}
+
+// Timer, altitude bar, and a red wash the moment a new hole tears.
+function updateRoundHud(now) {
+  const minutes = Math.floor(state.timeLeft / 60);
+  const seconds = Math.floor(state.timeLeft % 60);
+  timerText.textContent = `${minutes}:${String(seconds).padStart(2, '0')}`;
+  const altitude = Math.max(0, Math.round(state.altitude));
+  altitudeFill.style.width = `${altitude}%`;
+  altitudeFill.classList.toggle('low', altitude <= 30);
+  altitudeText.textContent = `Altitude ${altitude}%`;
+
+  if (state.opened > seenOpened) {
+    seenOpened = state.opened;
+    flashUntil = now + 500;
+  }
+  flash.style.opacity = flashUntil > now ? ((flashUntil - now) / 500) * 0.9 : 0;
+}
+
 function updateKit() {
   const kit = world.kit;
   const heldBy = state.kit.heldBy;
@@ -382,8 +459,11 @@ function loop() {
   ship.rotation.z = Math.sin(t * 0.8) * 0.06 * rocking;
   ship.rotation.x = Math.sin(t * 0.5) * 0.03 * rocking;
 
-  if (inWorld()) {
+  if (sessionActive) {
+    syncPhaseUi();
     const input = player.readInput();
+    input.again = againRequested;
+    againRequested = false;
     if (local.isHost) {
       // The host plays through the same pipe as everyone else.
       const own = inputs.get(local.id);
@@ -391,7 +471,7 @@ function loop() {
         Object.assign(own, input, {
           useTap: own.useTap || input.useTap,
           drop: own.drop || input.drop,
-          role: input.role ?? own.role,
+          again: own.again || input.again,
         });
       }
       hostTick(dt, now);
@@ -404,13 +484,14 @@ function loop() {
       if (net.sendInput(pending, now)) {
         pending.useTap = false;
         pending.drop = false;
-        pending.role = null;
+        pending.again = false;
       }
     }
     crew.update(dt);
     view.update(dt);
     updateStatus();
     updateBanner();
+    updateRoundHud(now);
   } else {
     orbitShip(t);
   }
@@ -427,7 +508,7 @@ function loop() {
 if (import.meta.env.DEV) {
   window.patch = {
     scene, camera, ship, world, player, crew, view,
-    state, local, net, game, bodies, inputs, THREE,
+    state, local, net, game, bodies, inputs, RULES, THREE,
   };
 }
 
