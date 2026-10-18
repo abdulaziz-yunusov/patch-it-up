@@ -314,3 +314,32 @@ button.big {
   opacity: 0;
   background: radial-gradient(circle, rgba(226, 87, 76, 0) 35%, rgba(226, 87, 76, 0.85) 100%);
 }
+
+/* Dock toys: one line of news, under the banner. */
+#toast {
+  position: absolute;
+  left: 50%;
+  top: 168px;
+  transform: translateX(-50%);
+  max-width: 80vw;
+  padding: 10px 18px;
+  font-size: 18px;
+  font-weight: 800;
+  text-align: center;
+  color: #2a1608;
+  background: #f3e2c0;
+  border: 3px solid #3b2516;
+  border-radius: 12px;
+  box-shadow: 0 4px 0 #3b2516;
+}
+
+/* H hides the overlays for a clean look at the ship. The crosshair and
+   anything you have to click stay, so the game is still playable. */
+body.no-hud #status,
+body.no-hud #banner,
+body.no-hud #roundHud,
+body.no-hud #prompt,
+body.no-hud #progress,
+body.no-hud .hud {
+  display: none !important;
+}

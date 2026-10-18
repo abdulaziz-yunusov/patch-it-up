@@ -28,20 +28,49 @@ export const RULES = {
   timeoutMs: 5000, // silence this long means that browser is gone
   countdown: 5, // seconds on the deck before the ship casts off
   correction: 0.25, // how hard your own sphere is pulled to the host's answer
+
+  // The dock's toys.
+  kickSpeed: 5.5, // metres per second a kicked crate leaves your foot at
+  kickLift: 3, // and how hard it hops
 };
+
+// The route board at the dock. The host picks; the flight's pace follows.
+export const ROUTES = [
+  { name: 'Calm Cliffs', breachEvery: [10, 18], rockEvery: 12 },
+  { name: 'Thunder Pass', breachEvery: [6, 11], rockEvery: 8 },
+];
+
+// What the dock mirror can put on your head. Index 0 is bare.
+export const HATS = ['no hat', 'beanie', 'captain hat', 'top hat', 'propeller cap'];
+
+// Sailor lines for the speaking tube, until there is real voice chat.
+export const SHOUTS = [
+  'Ahoy, crew!',
+  'All hands on deck!',
+  'Anyone seen my hammer?',
+  'Is this thing on?',
+  'Last one aboard swabs the deck!',
+  'Patch it up!',
+];
+
+// Where each kickable crate and barrel starts, filled in by dock.js from
+// the Blender model so host and joiners agree. name -> { x, y, z, h }
+export const propHomes = {};
 
 export const ROLES = ['mechanic', 'engineer', 'pilot'];
 
 // What each power tube feeds. Lift has no rule of its own yet.
 export const TUBES = ['engines', 'shields', 'lift'];
 
-// On the dock, in front of the lockers. y = the platform (-1.2) plus the
-// sphere's radius, which is where a standing player's middle sits.
+// On the Blender dock (public/models/waiting_room.glb), at its spawn_1..3
+// markers. y = the platform (-1.2) plus the sphere's radius, which is
+// where a standing player's middle sits. SPAWN_YAW faces the lockers.
 export const SPAWNS = [
-  { x: -3, y: -0.8, z: -9 },
-  { x: 0, y: -0.8, z: -9 },
-  { x: 3, y: -0.8, z: -9 },
+  { x: -1.5, y: -0.8, z: -19 },
+  { x: -1.5, y: -0.8, z: -15 },
+  { x: -1.5, y: -0.8, z: -11 },
 ];
+export const SPAWN_YAW = -Math.PI / 2;
 export const KIT_HOME = { x: -6.6, y: 0.15, z: 1.6 };
 
 export const state = {
@@ -60,6 +89,13 @@ export const state = {
   timeLeft: RULES.roundSeconds,
   result: null, // 'landed' or 'down', once the round ends
   kit: { heldBy: null, ...KIT_HOME },
+
+  // The dock's toys, all shared so everyone sees the same thing.
+  route: 0, // index into ROUTES
+  bell: 0, // rings so far: clients swing the bell when it goes up
+  shout: { count: 0, name: '', line: '' }, // the speaking tube
+  lampsOn: true,
+  props: {}, // name -> { x, y, z, ry, vx, vy, vz, spin, moving } once kicked
 };
 
 // Who this browser is. Never sent anywhere.
@@ -74,8 +110,9 @@ export function newPlayer(id, name, index) {
     x: spawn.x,
     y: spawn.y,
     z: spawn.z,
-    yaw: 0, // on the dock you arrive facing the lockers
+    yaw: SPAWN_YAW, // on the dock you arrive facing the lockers
     atWheel: false,
+    hat: 0, // index into HATS, changed at the mirror
   };
 }
 
@@ -96,6 +133,11 @@ export function snapshot() {
     timeLeft: state.timeLeft,
     result: state.result,
     kit: state.kit,
+    route: state.route,
+    bell: state.bell,
+    shout: state.shout,
+    lampsOn: state.lampsOn,
+    props: state.props,
   };
 }
 
@@ -115,6 +157,11 @@ export function applySnapshot(s) {
   state.timeLeft = s.timeLeft ?? state.timeLeft;
   state.result = s.result ?? null;
   state.kit = s.kit ?? state.kit;
+  state.route = s.route ?? state.route;
+  state.bell = s.bell ?? state.bell;
+  state.shout = s.shout ?? state.shout;
+  state.lampsOn = s.lampsOn ?? state.lampsOn;
+  state.props = s.props ?? state.props;
 }
 
 export function roleTaken(role, exceptId) {

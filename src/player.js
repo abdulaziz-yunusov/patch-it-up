@@ -40,6 +40,45 @@ export function createPlayerMesh(color = ROLE_COLORS.crew) {
   return body;
 }
 
+// Hats from the dock mirror, sitting on top of a sphere. Index matches
+// HATS in state.js; 0 is bare.
+const HAT_PARTS = [
+  () => [],
+  () => [part(new THREE.SphereGeometry(0.3, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), '#f2a33a', 0, 0.26, 0)],
+  () => [
+    part(new THREE.CylinderGeometry(0.3, 0.32, 0.18, 14), '#1d3d7a', 0, 0.42, 0),
+    part(new THREE.CylinderGeometry(0.36, 0.36, 0.04, 14), '#0c1f42', 0, 0.34, -0.14),
+    part(new THREE.SphereGeometry(0.05, 8, 6), '#ffd58a', 0, 0.44, -0.3),
+  ],
+  () => [
+    part(new THREE.CylinderGeometry(0.22, 0.22, 0.42, 14), '#22202a', 0, 0.56, 0),
+    part(new THREE.CylinderGeometry(0.36, 0.36, 0.04, 14), '#22202a', 0, 0.36, 0),
+    part(new THREE.CylinderGeometry(0.225, 0.225, 0.07, 14), '#c9443a', 0, 0.42, 0),
+  ],
+  () => [
+    part(new THREE.SphereGeometry(0.28, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), '#4a86e8', 0, 0.28, 0),
+    part(new THREE.CylinderGeometry(0.02, 0.02, 0.16, 6), '#6b7183', 0, 0.62, 0),
+    part(new THREE.BoxGeometry(0.5, 0.02, 0.08), '#ffd84d', 0, 0.7, 0, 'propeller'),
+  ],
+];
+
+function part(geometry, color, x, y, z, name = '') {
+  const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color, flatShading: true }));
+  mesh.position.set(x, y, z);
+  mesh.name = name;
+  return mesh;
+}
+
+export function setHat(playerMesh, hat = 0) {
+  if (playerMesh.userData.hatIndex === hat) return;
+  playerMesh.userData.hatIndex = hat;
+  playerMesh.userData.hat?.removeFromParent();
+  const group = new THREE.Group();
+  for (const mesh of (HAT_PARTS[hat] ?? HAT_PARTS[0])()) group.add(mesh);
+  playerMesh.add(group);
+  playerMesh.userData.hat = group;
+}
+
 export function createBody(x = 0, y = 0, z = 0) {
   return {
     position: new THREE.Vector3(x, y, z),
@@ -230,6 +269,7 @@ export class RemoteCrew {
       if (!this.crew.has(player.id)) this.add(player);
       const entry = this.crew.get(player.id);
       entry.mesh.userData.sphere.material.color.set(ROLE_COLORS[player.role] ?? ROLE_COLORS.crew);
+      setHat(entry.mesh, player.hat ?? 0);
     }
   }
 
@@ -260,6 +300,8 @@ export class RemoteCrew {
 
   update(dt) {
     for (const entry of this.crew.values()) {
+      const propeller = entry.mesh.getObjectByName('propeller');
+      if (propeller) propeller.rotation.y += dt * 12;
       entry.t = Math.min(this.step, entry.t + dt);
       const k = this.step > 0 ? entry.t / this.step : 1;
       entry.mesh.position.set(

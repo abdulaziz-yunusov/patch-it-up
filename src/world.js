@@ -422,6 +422,7 @@ function buildDock(ship, box) {
     (GANGPLANK.zFoot + GANGPLANK.zTop) / 2
   );
   ramp.rotation.x = -Math.atan2(rise, run);
+  ramp.name = 'gangplank'; // the Blender dock keeps this one
 
   // An invisible gate at the foot of the ramp. It is a collider only for
   // players who have not taken a uniform yet.
@@ -461,7 +462,7 @@ function buildDock(ship, box) {
 }
 
 // A plane with text painted on it: good enough for a name over a locker.
-function createLabel(width, height, pixelWidth = 256, pixelHeight = 64) {
+export function createLabel(width, height, pixelWidth = 256, pixelHeight = 64) {
   const canvas = document.createElement('canvas');
   canvas.width = pixelWidth;
   canvas.height = pixelHeight;
@@ -477,7 +478,7 @@ function createLabel(width, height, pixelWidth = 256, pixelHeight = 64) {
 }
 
 // Only repaint when the words change: this runs every frame.
-function drawLabel(mesh, text) {
+export function drawLabel(mesh, text) {
   if (mesh.userData.text === text) return;
   mesh.userData.text = text;
   const canvas = mesh.userData.canvas;

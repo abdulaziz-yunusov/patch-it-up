@@ -3,12 +3,15 @@
 
 import * as THREE from 'three';
 import { buildShip, addLights, addSky, applyState, groundHeight } from './world.js';
+import { loadDockModel, updateDock, resetDockEffects } from './dock.js';
 import { LocalPlayer, RemoteCrew, createBody, stepBody } from './player.js';
 import { InteractionView, HostInteractions } from './interact.js';
 import { Net, makeCode } from './network.js';
 import {
   RULES,
+  ROUTES,
   SPAWNS,
+  SPAWN_YAW,
   applySnapshot,
   local,
   newPlayer,
@@ -37,6 +40,7 @@ camera.rotation.order = 'YXZ';
 const world = buildShip();
 const ship = world.ship;
 scene.add(ship);
+loadDockModel(world); // swaps the coded dock for the Blender one when it arrives
 
 const player = new LocalPlayer({ ship, camera, colliders: world.colliders });
 const crew = new RemoteCrew(ship, RULES.stateHz);
@@ -244,6 +248,7 @@ function leaveShip(message = '') {
   state.countdown = null;
   playUi.hidden = true;
   player.exit(scene);
+  resetDockEffects();
   note(message);
   showScreen('menu');
 }
@@ -259,6 +264,14 @@ player.controls.addEventListener('unlock', () => {
 });
 document.getElementById('clickToPlay').addEventListener('click', () => player.controls.lock());
 document.getElementById('leaveShip').addEventListener('click', () => leaveShip());
+// H hides the overlays, H again brings them back. Ignored while a field
+// has focus, or typing a name would blank the screen.
+addEventListener('keydown', (e) => {
+  if (e.code !== 'KeyH' || e.repeat) return;
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+  document.body.classList.toggle('no-hud');
+});
+
 document.getElementById('resultBack').addEventListener('click', () => {
   if (!sessionActive) {
     showScreen('menu');
@@ -346,7 +359,7 @@ function returnToDock() {
       body.velocityY = 0;
       body.atWheel = false;
     }
-    if (seated.id === local.id) player.enter(spawn.x, spawn.y, spawn.z, 0);
+    if (seated.id === local.id) player.enter(spawn.x, spawn.y, spawn.z, SPAWN_YAW);
   });
 }
 
@@ -432,7 +445,7 @@ function updateStatus() {
     `Room ${local.code}${local.isHost ? ' (host)' : ''}`,
     state.phase === 'flight'
       ? `${role} · power ${state.power.join('-')} · helm ${state.steering.toFixed(2)}`
-      : role,
+      : `${role} · ${ROUTES[state.route].name}`,
     `Crew: ${names}`,
   ];
   statusLine.textContent = parts.join('\n');
@@ -499,6 +512,7 @@ function loop() {
   // Every browser draws the scene from the state it has.
   applyState(world, state, state.players[local.id]?.atWheel ?? false);
   updateKit();
+  updateDock(world, state, local, now);
 
   renderer.render(scene, camera);
   requestAnimationFrame(loop);

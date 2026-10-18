@@ -1,9 +1,9 @@
 // The game rules. Only the host runs these: everyone else sends inputs
 // and draws the state that comes back.
 
-import { KIT_HOME, RULES, roleTaken, state } from './state.js';
+import { HATS, KIT_HOME, ROUTES, RULES, SHOUTS, propHomes, roleTaken, state } from './state.js';
 import { lookDirection } from './player.js';
-import { BREACH_SPOTS, HELM_STANCE, SHIP } from './world.js';
+import { BREACH_SPOTS, DOCK, HELM_STANCE, SHIP } from './world.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const between = ([lo, hi]) => lo + Math.random() * (hi - lo);
@@ -25,7 +25,105 @@ export const ACTIONS = {
   wheel: (interact, player, body) => toggleWheel(player, body),
   pickup: (interact, player) => pickUpKit(player),
   role: (interact, player) => pickRole(player, interact.takes),
+  bell: () => ringBell(),
+  shout: (interact, player) => shoutDownTube(player),
+  hat: (interact, player) => nextHat(player),
+  lamps: () => toggleLamps(),
+  route: (interact, player) => nextRoute(player),
+  kick: (interact, player) => kickProp(interact.prop, player),
 };
+
+// --- the dock's toys ---------------------------------------------------
+
+export function ringBell() {
+  state.bell += 1;
+  return true;
+}
+
+export function shoutDownTube(player) {
+  const line = SHOUTS[Math.floor(Math.random() * SHOUTS.length)];
+  state.shout = { count: state.shout.count + 1, name: player.name, line };
+  return true;
+}
+
+export function nextHat(player) {
+  player.hat = ((player.hat ?? 0) + 1) % HATS.length;
+  return true;
+}
+
+export function toggleLamps() {
+  state.lampsOn = !state.lampsOn;
+  return true;
+}
+
+// Only the host picks the route, and only while still at the dock.
+export function nextRoute(player) {
+  if (player.id !== 'host' || state.phase !== 'lobby') return false;
+  state.route = (state.route + 1) % ROUTES.length;
+  return true;
+}
+
+const route = () => ROUTES[state.route] ?? ROUTES[0];
+
+// The inside of the dock rails, less a crate's half width.
+const PROP_BOUNDS = { minX: -5.5, maxX: 5.5, minZ: DOCK.zNear - 19.5, maxZ: DOCK.zNear - 0.5 };
+
+export function kickProp(name, player) {
+  const home = propHomes[name];
+  if (!home) return false;
+  const now = state.props[name] ?? { x: home.x, y: home.y, z: home.z, ry: 0 };
+  const ahead = lookDirection(player.yaw ?? 0, 0);
+  state.props[name] = {
+    ...now,
+    vx: ahead.x * RULES.kickSpeed,
+    vy: RULES.kickLift,
+    vz: ahead.z * RULES.kickSpeed,
+    spin: (Math.random() - 0.5) * 8,
+    moving: true,
+  };
+  // Nothing stacks once the pile is disturbed: anything left hanging in
+  // the air drops to the planks.
+  for (const [other, otherHome] of Object.entries(propHomes)) {
+    const p = state.props[other] ?? { x: otherHome.x, y: otherHome.y, z: otherHome.z, ry: 0 };
+    if (other !== name && p.y > DOCK.top + otherHome.h + 0.05 && !p.moving) {
+      state.props[other] = { ...p, vx: 0, vy: 0, vz: 0, spin: 0, moving: true };
+    }
+  }
+  return true;
+}
+
+// Host only: kicked props fly, bounce off the rails and slide to a stop.
+export function tickProps(dt) {
+  for (const [name, p] of Object.entries(state.props)) {
+    if (!p.moving) continue;
+    const floor = DOCK.top + (propHomes[name]?.h ?? 0.4);
+    p.vy -= 14 * dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.z += p.vz * dt;
+    p.ry += p.spin * dt;
+
+    const onFloor = p.y <= floor;
+    if (onFloor) {
+      p.y = floor;
+      p.vy = Math.abs(p.vy) > 1.2 ? -p.vy * 0.3 : 0;
+      const grip = Math.max(0, 1 - 4 * dt); // planks slow a sliding crate fast
+      p.vx *= grip;
+      p.vz *= grip;
+      p.spin *= grip;
+    }
+    const { minX, maxX, minZ, maxZ } = PROP_BOUNDS;
+    if (p.x < minX || p.x > maxX) {
+      p.x = clamp(p.x, minX, maxX);
+      p.vx *= -0.4;
+    }
+    if (p.z < minZ || p.z > maxZ) {
+      p.z = clamp(p.z, minZ, maxZ);
+      p.vz *= -0.4;
+    }
+    if (onFloor && p.vy === 0 && Math.hypot(p.vx, p.vz) < 0.1) p.moving = false;
+  }
+}
 
 export function patchBreach(id) {
   if (!state.breaches[id]) return false; // already mended
@@ -124,8 +222,8 @@ export function startRound() {
   state.drift = 0;
   state.rock = { lane: 0, distance: 0, active: false };
   state.result = null;
-  nextBreachIn = between(RULES.breachEvery);
-  nextRockIn = RULES.rockEvery;
+  nextBreachIn = between(route().breachEvery);
+  nextRockIn = route().rockEvery;
 }
 
 // Three minutes in the air: the clock, the holes, the helm, the rocks.
@@ -136,7 +234,7 @@ export function tickFlight(dt) {
   nextBreachIn -= dt;
   if (nextBreachIn <= 0) {
     openBreach();
-    nextBreachIn = between(RULES.breachEvery);
+    nextBreachIn = between(route().breachEvery);
   }
 
   // Every open hole bleeds height away.
@@ -153,7 +251,7 @@ export function tickFlight(dt) {
   nextRockIn -= dt;
   if (!state.rock.active && nextRockIn <= 0) {
     state.rock = { lane: Math.random() * 2 - 1, distance: RULES.rockDistance, active: true };
-    nextRockIn = RULES.rockEvery;
+    nextRockIn = route().rockEvery;
   }
   if (state.rock.active) {
     state.rock.distance -= RULES.rockSpeed * dt;
@@ -198,6 +296,7 @@ export function backToDock() {
 // count down and cast off. Anyone stepping back ashore stops the clock.
 export function tickLobby(dt) {
   if (state.phase !== 'lobby') return;
+  tickProps(dt);
   const crew = Object.values(state.players);
   const ready =
     crew.length === RULES.maxPlayers && crew.every((p) => p.role !== 'crew' && aboard(p));
