@@ -1,4 +1,4 @@
-// Builds the ship from boxes. 1 unit = 1 metre.
+// Builds the ship and the dock from boxes. 1 unit = 1 metre.
 // Replace with Blender .glb models later (public/models/).
 
 import * as THREE from 'three';
@@ -13,7 +13,26 @@ export const SHIP = {
   thickness: 0.2,
 };
 
-// Room centres along x. The stations are placeholders for step 4.
+// The dock lies off the port side. While the ship is moored it does not
+// rock, so dock and ship share one set of coordinates.
+export const DOCK = {
+  length: 20, // x: -10 .. 10
+  width: 10, // z: -15 .. -5
+  top: -1.2, // one long stride below the deck
+  zFar: -15,
+  zNear: -5,
+};
+
+// The cargo door in the port wall, and the gangplank that climbs to it.
+export const GANGPLANK = { halfWidth: 1, zFoot: -5, zTop: -3 };
+
+// Where the pilot stands when they take the wheel: one stride behind it.
+export const HELM_STANCE = { x: 8.9, z: 0, look: -Math.PI / 2 };
+
+// Power tubes: 0 units is a stub, maxPerTube fills the tube.
+// Starboard wall: the port side of the power room is the cargo doorway.
+const TUBE = { min: 0.4, max: 2, size: 0.4, z: 2.4, xs: [-1.2, 0, 1.2] };
+
 // floor = a muted inlay underfoot, color = the bright stripe along the walls.
 export const ROOMS = [
   { id: 'engine', name: 'Engine room', x: -8, color: '#e2574c', floor: '#8e4039' },
@@ -21,21 +40,22 @@ export const ROOMS = [
   { id: 'helm', name: 'Helm', x: 8, color: '#4a86e8', floor: '#35548e' },
 ];
 
-const WINDOW = { width: 3, bottom: 1.1, top: 2.4 };
-
-// Power tubes: 0 units is a stub, maxPerTube fills the tube.
-const TUBE = { min: 0.4, max: 2, size: 0.4, z: -2.4, xs: [-1.2, 0, 1.2] };
-
-// Where the pilot stands when they take the wheel: one stride behind it.
-export const HELM_STANCE = { x: 8.9, z: 0, look: -Math.PI / 2 };
-
 // Where the hull springs a leak. Step 7 opens these during a flight;
 // for now all three are open so there is always something to patch.
 export const BREACH_SPOTS = [
   { id: 'b0', x: -8.5, z: 1.9 },
-  { id: 'b1', x: 0.8, z: 1.9 },
+  { id: 'b1', x: -2.2, z: -1.9 }, // clear of the cargo doorway
   { id: 'b2', x: 7.4, z: -1.9 },
 ];
+
+// One locker per role, in role order, along the far rail of the dock.
+export const LOCKERS = [
+  { role: 'mechanic', x: -3, color: '#e2574c' },
+  { role: 'engineer', x: 0, color: '#49b97a' },
+  { role: 'pilot', x: 3, color: '#4a86e8' },
+];
+
+const WINDOW = { width: 3, bottom: 1.1, top: 2.4 };
 
 export function addSky(scene) {
   scene.background = new THREE.Color('#353a68');
@@ -51,6 +71,23 @@ export function addLights(scene) {
   scene.add(sun);
 }
 
+// How high the floor is under a given spot. Flat ground was enough until
+// the dock arrived: now there is a platform, a ramp and the deck.
+export function groundHeight(x, z, phase) {
+  // The wall slab counts as inside, or the threshold under the cargo door
+  // would be a 10 cm strip of thin air.
+  const insideHull = Math.abs(x) < SHIP.length / 2 - 0.1 && Math.abs(z) < SHIP.width / 2 + 0.05;
+  if (insideHull) return 0;
+  if (phase === 'flight') return 0; // the dock is gone; nothing else to stand on
+
+  const { halfWidth, zFoot, zTop } = GANGPLANK;
+  if (Math.abs(x) <= halfWidth && z >= zFoot && z <= zTop) {
+    const climbed = (z - zFoot) / (zTop - zFoot); // 0 at the dock, 1 at the door
+    return DOCK.top + climbed * -DOCK.top;
+  }
+  return DOCK.top;
+}
+
 // Returns the ship group plus the boxes a player cannot walk through.
 // The colliders are in ship space, so they stay correct while the ship rocks.
 export function buildShip() {
@@ -62,14 +99,6 @@ export function buildShip() {
   const deck = new THREE.MeshStandardMaterial({ color: '#a87447', flatShading: true });
   const metal = new THREE.MeshStandardMaterial({ color: '#6b7183', flatShading: true });
 
-  // A solid part: added to the ship and remembered as a collider.
-  const solid = (geometry, material, x, y, z) => {
-    const mesh = part(geometry, material, x, y, z);
-    mesh.updateMatrixWorld(true);
-    colliders.push(new THREE.Box3().setFromObject(mesh));
-    return mesh;
-  };
-
   // Scenery: seen, but walked through (floor, ceiling, accents, balloon).
   const part = (geometry, material, x, y, z) => {
     const mesh = new THREE.Mesh(geometry, material);
@@ -78,15 +107,35 @@ export function buildShip() {
     return mesh;
   };
 
+  // A solid part: added to the ship and remembered as a collider.
+  const solid = (geometry, material, x, y, z) => {
+    const mesh = part(geometry, material, x, y, z);
+    mesh.updateMatrixWorld(true);
+    colliders.push(new THREE.Box3().setFromObject(mesh));
+    return mesh;
+  };
+
   const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
 
-  // Hull: floor, ceiling, two side walls, stern wall.
+  // Hull: floor, ceiling, starboard wall, stern wall.
   part(box(length, 0.3, width), deck, 0, -0.15, 0);
   part(box(length, thickness, width), wood, 0, wallHeight + 0.1, 0);
-  for (const z of [-width / 2, width / 2]) {
-    solid(box(length, wallHeight, thickness), wood, 0, wallHeight / 2, z);
-  }
+  solid(box(length, wallHeight, thickness), wood, 0, wallHeight / 2, width / 2);
   solid(box(thickness, wallHeight, width), wood, -length / 2, wallHeight / 2, 0);
+
+  // Port wall, with the cargo door the gangplank climbs to.
+  const portZ = -width / 2;
+  const gap = GANGPLANK.halfWidth;
+  const panel = length / 2 - gap;
+  for (const side of [-1, 1]) {
+    solid(box(panel, wallHeight, thickness), wood, side * (gap + panel / 2), wallHeight / 2, portZ);
+  }
+  solid(box(gap * 2, wallHeight - doorHeight, thickness), wood, 0, (wallHeight + doorHeight) / 2, portZ);
+
+  // The hatch that closes once the ship casts off (step 6 hides it at the dock).
+  const hatch = part(box(gap * 2, doorHeight, thickness), wood, 0, doorHeight / 2, portZ);
+  hatch.updateMatrixWorld(true);
+  const hatchCollider = new THREE.Box3().setFromObject(hatch);
 
   // Bow wall with a window gap, so the pilot can see what is coming.
   const bowX = length / 2;
@@ -111,9 +160,9 @@ export function buildShip() {
 
   // Two inner walls, each with a door gap you can walk through.
   for (const x of [-4, 4]) {
-    const panel = (width - doorWidth) / 2;
-    for (const side of [-1, 1]) {
-      solid(box(thickness, wallHeight, panel), wood, x, wallHeight / 2, side * (doorWidth / 2 + panel / 2));
+    const side = (width - doorWidth) / 2;
+    for (const sign of [-1, 1]) {
+      solid(box(thickness, wallHeight, side), wood, x, wallHeight / 2, sign * (doorWidth / 2 + side / 2));
     }
     solid(box(thickness, wallHeight - doorHeight, doorWidth), wood, x, (wallHeight + doorHeight) / 2, 0);
   }
@@ -141,11 +190,24 @@ export function buildShip() {
   );
   balloon.scale.set(14, 4, 5);
 
-  return { ship, colliders, breaches, ...stations };
+  const dock = buildDock(ship, box);
+
+  return {
+    ship,
+    colliders,
+    breaches,
+    hatch,
+    ...stations,
+    ...dock,
+    // Which boxes block a player depends on where the game is: at the dock
+    // the hatch is open and the dock is solid, in flight the opposite.
+    lobbyColliders: [...colliders, ...dock.dockColliders],
+    lobbyGatedColliders: [...colliders, ...dock.dockColliders, dock.gateCollider],
+    flightColliders: [...colliders, hatchCollider],
+  };
 }
 
-// Draw the ship the way the state says it is: tube heights, patched
-// breaches, the angle of the wheel.
+// Draw the ship and the dock the way the state says they are.
 export function applyState(world, state, localAtWheel = false) {
   world.tubes.forEach((tube, i) => {
     const height = TUBE.min + (state.power[i] / RULES.maxPerTube) * (TUBE.max - TUBE.min);
@@ -155,6 +217,22 @@ export function applyState(world, state, localAtWheel = false) {
   for (const [id, mesh] of Object.entries(world.breaches)) mesh.visible = !state.breaches[id];
   world.wheelDisc.rotation.y = state.steering * 2.2;
   world.wheelMount.userData.interact.label = localAtWheel ? 'Leave the wheel' : 'Take the wheel';
+
+  const atDock = state.phase === 'lobby';
+  world.dock.visible = atDock;
+  world.hatch.visible = !atDock;
+
+  // A taken locker goes dark and wears its owner's name.
+  for (const locker of world.lockers) {
+    const owner = Object.values(state.players).find((p) => p.role === locker.userData.takes);
+    const taken = Boolean(owner);
+    locker.material.color.set(taken ? locker.userData.darkColor : locker.userData.freeColor);
+    locker.userData.interact = taken ? null : locker.userData.freeInteract;
+    const label = locker.userData.label;
+    label.visible = taken;
+    if (taken) drawLabel(label, owner.name);
+  }
+  drawLabel(world.board, state.code ? `Room ${state.code}` : 'Room ...');
 }
 
 function buildBreaches(ship, part, box) {
@@ -209,7 +287,7 @@ function buildStations(ship, colliders, solid, box, metal) {
     );
 
     const lever = new THREE.Mesh(box(0.22, 0.22, 0.22), brass);
-    lever.position.set(x, 1.05, TUBE.z + 0.31);
+    lever.position.set(x, 1.05, TUBE.z - 0.31);
     lever.name = `lever${i}`;
     lever.userData.interact = { label: 'Power up', role: 'engineer', action: 'power', index: i };
     ship.add(lever);
@@ -237,4 +315,130 @@ function buildStations(ship, colliders, solid, box, metal) {
   colliders.push(new THREE.Box3().setFromObject(wheelMount));
 
   return { tubes, levers, wheelMount, wheelDisc, kit };
+}
+
+// The dock: a plank platform with a rail round it, three lockers, the
+// gangplank, and a board with the room code on it.
+function buildDock(ship, box) {
+  const dock = new THREE.Group();
+  dock.name = 'dock';
+  ship.add(dock);
+
+  const dockColliders = [];
+  const plank = new THREE.MeshStandardMaterial({ color: '#7d5b3c', flatShading: true });
+  const post = new THREE.MeshStandardMaterial({ color: '#5d4228', flatShading: true });
+
+  const add = (geometry, material, x, y, z, solid = false) => {
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(x, y, z);
+    dock.add(mesh);
+    if (solid) {
+      mesh.updateMatrixWorld(true);
+      dockColliders.push(new THREE.Box3().setFromObject(mesh));
+    }
+    return mesh;
+  };
+
+  const midZ = (DOCK.zFar + DOCK.zNear) / 2;
+  add(box(DOCK.length, 0.4, DOCK.width), plank, 0, DOCK.top - 0.2, midZ);
+
+  // Rails all the way round except the gangplank, so the only way off the
+  // dock is onto the ship.
+  const railY = DOCK.top + 0.5;
+  add(box(DOCK.length, 1, 0.2), post, 0, railY, DOCK.zFar, true);
+  for (const x of [-DOCK.length / 2, DOCK.length / 2]) {
+    add(box(0.2, 1, DOCK.width), post, x, railY, midZ, true);
+  }
+  const sideRail = DOCK.length / 2 - GANGPLANK.halfWidth;
+  for (const sign of [-1, 1]) {
+    add(
+      box(sideRail, 1, 0.2),
+      post,
+      sign * (GANGPLANK.halfWidth + sideRail / 2),
+      railY,
+      DOCK.zNear,
+      true
+    );
+  }
+
+  // The gangplank itself: a sloped board from the dock up to the door.
+  const run = GANGPLANK.zTop - GANGPLANK.zFoot;
+  const rise = -DOCK.top;
+  const ramp = add(
+    box(GANGPLANK.halfWidth * 2, 0.16, Math.hypot(run, rise)),
+    plank,
+    0,
+    DOCK.top / 2,
+    (GANGPLANK.zFoot + GANGPLANK.zTop) / 2
+  );
+  ramp.rotation.x = -Math.atan2(rise, run);
+
+  // An invisible gate at the foot of the ramp. It is a collider only for
+  // players who have not taken a uniform yet.
+  const gateCollider = new THREE.Box3().setFromCenterAndSize(
+    new THREE.Vector3(0, DOCK.top + 1, GANGPLANK.zFoot - 0.1),
+    new THREE.Vector3(GANGPLANK.halfWidth * 2, 2, 0.3)
+  );
+
+  const lockers = LOCKERS.map((spec) => {
+    const material = new THREE.MeshStandardMaterial({ color: spec.color, flatShading: true });
+    const locker = add(box(1, 1.8, 0.6), material, spec.x, DOCK.top + 0.9, DOCK.zFar + 1.2, true);
+    locker.name = `locker-${spec.role}`;
+    locker.userData.takes = spec.role;
+    locker.userData.freeColor = new THREE.Color(spec.color);
+    locker.userData.darkColor = new THREE.Color(spec.color).multiplyScalar(0.35);
+    locker.userData.freeInteract = {
+      label: `Take the ${spec.role} uniform`,
+      action: 'role',
+      takes: spec.role,
+    };
+    locker.userData.interact = locker.userData.freeInteract;
+
+    const label = createLabel(1.4, 0.36);
+    label.position.set(spec.x, DOCK.top + 2.1, DOCK.zFar + 1.6);
+    label.visible = false;
+    dock.add(label);
+    locker.userData.label = label;
+    return locker;
+  });
+
+  // The room code, big enough to read out loud across a room.
+  const board = createLabel(5, 1.2, 512, 128);
+  board.position.set(0, DOCK.top + 3.4, DOCK.zFar + 0.4);
+  dock.add(board);
+
+  return { dock, dockColliders, gateCollider, lockers, board };
+}
+
+// A plane with text painted on it: good enough for a name over a locker.
+function createLabel(width, height, pixelWidth = 256, pixelHeight = 64) {
+  const canvas = document.createElement('canvas');
+  canvas.width = pixelWidth;
+  canvas.height = pixelHeight;
+  const texture = new THREE.CanvasTexture(canvas);
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(width, height),
+    new THREE.MeshBasicMaterial({ map: texture, transparent: true })
+  );
+  mesh.userData.canvas = canvas;
+  mesh.userData.texture = texture;
+  mesh.userData.text = null;
+  return mesh;
+}
+
+// Only repaint when the words change: this runs every frame.
+function drawLabel(mesh, text) {
+  if (mesh.userData.text === text) return;
+  mesh.userData.text = text;
+  const canvas = mesh.userData.canvas;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = 'rgba(20, 24, 48, 0.85)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#fff4dc';
+  ctx.font = `bold ${Math.round(canvas.height * 0.52)}px system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2, canvas.width * 0.9);
+  mesh.userData.texture.needsUpdate = true;
 }

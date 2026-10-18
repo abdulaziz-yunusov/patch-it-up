@@ -19,7 +19,7 @@ export const ROLE_COLORS = {
   crew: '#d9d2c5', // before a role is picked
 };
 
-const ONE_SHOT = ['KeyE', 'Digit1', 'Digit2', 'Digit3'];
+const ONE_SHOT = ['KeyE']; // roles come from the lockers now, not the keyboard
 
 // A sphere with two eyes, so the others can tell which way you face.
 export function createPlayerMesh(color = ROLE_COLORS.crew) {
@@ -40,9 +40,9 @@ export function createPlayerMesh(color = ROLE_COLORS.crew) {
   return body;
 }
 
-export function createBody(x = -10, z = 0) {
+export function createBody(x = 0, y = 0, z = 0) {
   return {
-    position: new THREE.Vector3(x, PLAYER.radius, z),
+    position: new THREE.Vector3(x, y, z),
     velocityY: 0,
     onGround: true,
     atWheel: false,
@@ -76,7 +76,7 @@ function tryMove(body, colliders, dx, dy, dz) {
 
 // One step of movement. The host runs this for all three players; every
 // browser also runs it for itself, so walking feels instant.
-export function stepBody(body, input, colliders, dt) {
+export function stepBody(body, input, colliders, dt, groundAt = () => 0) {
   const keys = input.keys ?? {};
   const yaw = input.yaw ?? 0;
 
@@ -105,10 +105,12 @@ export function stepBody(body, input, colliders, dt) {
   body.onGround = false;
   tryMove(body, colliders, 0, body.velocityY * dt, 0);
 
-  // The deck itself is not a collider: a sphere resting on it would
-  // overlap and block every step. It is a floor height instead.
-  if (body.position.y < PLAYER.radius) {
-    body.position.y = PLAYER.radius;
+  // The floor is never a collider: a sphere resting on one would overlap
+  // it and block every step. It is a height you cannot sink below, which
+  // is also what lets the gangplank be walked up.
+  const floor = groundAt(body.position.x, body.position.z) + PLAYER.radius;
+  if (body.position.y < floor) {
+    body.position.y = floor;
     body.velocityY = 0;
     body.onGround = true;
   }
@@ -143,9 +145,9 @@ export class LocalPlayer {
     });
   }
 
-  // Step aboard at a spot in ship space, camera parented to the ship.
-  enter(x, z, yaw = -Math.PI / 2) {
-    this.body.position.set(x, PLAYER.radius, z);
+  // Step into the world at a spot in ship space, camera parented to the ship.
+  enter(x, y, z, yaw = -Math.PI / 2) {
+    this.body.position.set(x, y, z);
     this.body.velocityY = 0;
     this.body.onGround = true;
     this.body.atWheel = false;
@@ -165,7 +167,6 @@ export class LocalPlayer {
 
   // What this browser sends the host, 30 times a second.
   readInput() {
-    const roleTap = ['Digit1', 'Digit2', 'Digit3'].findIndex((code) => this.taps.has(code));
     const input = {
       keys: {
         KeyW: !!this.keys.KeyW,
@@ -180,15 +181,14 @@ export class LocalPlayer {
       // A tap can start and end between two frames, let alone two packets.
       useTap: this.taps.has('KeyE'),
       drop: this.dropRequested,
-      role: roleTap >= 0 ? roleTap : null,
     };
     this.taps.clear();
     this.dropRequested = false;
     return input;
   }
 
-  predict(input, dt) {
-    stepBody(this.body, input, this.colliders, dt);
+  predict(input, dt, colliders, groundAt) {
+    stepBody(this.body, input, colliders ?? this.colliders, dt, groundAt);
     this.syncView();
   }
 

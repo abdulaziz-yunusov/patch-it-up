@@ -46,18 +46,29 @@
       </div>
     </div>
 
-    <div id="flight" class="screen" hidden>
+    <!-- Shown whenever you are in the world, at the dock or in the air. -->
+    <div id="play" hidden>
       <div id="crosshair"></div>
       <div id="prompt" hidden></div>
       <div id="progress" hidden><div id="progressFill"></div></div>
       <div id="status"></div>
-      <div id="hud">
-        WASD move · mouse look · E use · right click drop · Esc frees the mouse<br />
-        1 2 3 pick a free role, until the lobby hands them out
-      </div>
       <div id="lockOverlay">
         <button id="clickToPlay" type="button" class="primary big">Click to play</button>
         <button id="leaveShip" type="button">Leave ship</button>
+      </div>
+    </div>
+
+    <div id="lobby" class="screen" hidden>
+      <div id="banner"></div>
+      <div class="hud">
+        WASD move · mouse look · E take a uniform · Esc frees the mouse<br />
+        Dressed? Up the gangplank. The ship leaves when all three are aboard.
+      </div>
+    </div>
+
+    <div id="flight" class="screen" hidden>
+      <div class="hud">
+        WASD move · mouse look · E use · right click drop · Esc frees the mouse
       </div>
     </div>
 

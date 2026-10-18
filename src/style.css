@@ -141,13 +141,48 @@ button.big {
   color: #ffb3ab;
 }
 
-/* Flight screen */
-#hud {
+/* In-world overlays */
+#play {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+#lockOverlay {
+  pointer-events: auto;
+}
+
+.hud {
   position: absolute;
   left: 16px;
   bottom: 16px;
   font-weight: 700;
+  line-height: 1.5;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+}
+
+#lobby,
+#flight {
+  pointer-events: none;
+}
+
+#banner {
+  position: absolute;
+  left: 50%;
+  top: 104px; /* clear of the status panel on a narrow window */
+  transform: translateX(-50%);
+  padding: 12px 22px;
+  font-size: 22px;
+  font-weight: 800;
+  text-align: center;
+  background: rgba(20, 24, 48, 0.7);
+  border: 3px solid #3b2516;
+  border-radius: 12px;
+  white-space: nowrap;
+}
+
+#banner:empty {
+  display: none;
 }
 
 #lockOverlay {
@@ -226,6 +261,4 @@ button.big {
   border-radius: 10px;
 }
 
-#hud {
-  line-height: 1.5;
-}
+

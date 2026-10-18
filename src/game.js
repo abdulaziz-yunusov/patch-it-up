@@ -1,9 +1,9 @@
 // The game rules. Only the host runs these: everyone else sends inputs
 // and draws the state that comes back.
 
-import { KIT_HOME, ROLES, RULES, roleTaken, state } from './state.js';
+import { KIT_HOME, RULES, roleTaken, state } from './state.js';
 import { lookDirection } from './player.js';
-import { HELM_STANCE } from './world.js';
+import { HELM_STANCE, SHIP } from './world.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -18,6 +18,7 @@ export const ACTIONS = {
   power: (interact) => movePower(interact.index),
   wheel: (interact, player, body) => toggleWheel(player, body),
   pickup: (interact, player) => pickUpKit(player),
+  role: (interact, player) => pickRole(player, interact.takes),
 };
 
 export function patchBreach(id) {
@@ -75,11 +76,37 @@ export function dropKit(player, body, yaw) {
   return true;
 }
 
-export function requestRole(player, index) {
-  const role = ROLES[index];
+// A locker hands out its uniform only if nobody else is wearing it.
+export function pickRole(player, role) {
   if (!role || roleTaken(role, player.id)) return false;
   player.role = role;
   return true;
+}
+
+export function aboard(player) {
+  return (
+    Math.abs(player.x) < SHIP.length / 2 - 0.3 &&
+    Math.abs(player.z) < SHIP.width / 2 - 0.1 &&
+    player.y > -0.2
+  );
+}
+
+// At the dock: once the whole crew is dressed and standing on the deck,
+// count down and cast off. Anyone stepping back ashore stops the clock.
+export function tickLobby(dt) {
+  if (state.phase !== 'lobby') return;
+  const crew = Object.values(state.players);
+  const ready =
+    crew.length === RULES.maxPlayers && crew.every((p) => p.role !== 'crew' && aboard(p));
+  if (!ready) {
+    state.countdown = null;
+    return;
+  }
+  state.countdown = (state.countdown ?? RULES.countdown) - dt;
+  if (state.countdown <= 0) {
+    state.countdown = null;
+    state.phase = 'flight';
+  }
 }
 
 // Someone's browser closed: free what they were holding.

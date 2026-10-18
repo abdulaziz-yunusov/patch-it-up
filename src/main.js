@@ -2,7 +2,7 @@
 // joins the two halves of a session: the host simulating, everyone drawing.
 
 import * as THREE from 'three';
-import { buildShip, addLights, addSky, applyState } from './world.js';
+import { buildShip, addLights, addSky, applyState, groundHeight } from './world.js';
 import { LocalPlayer, RemoteCrew, createBody, stepBody } from './player.js';
 import { InteractionView, HostInteractions } from './interact.js';
 import { Net, makeCode } from './network.js';
@@ -52,11 +52,24 @@ const hostInteractions = new HostInteractions(ship);
 const bodies = new Map(); // host only: player id -> body it simulates
 const inputs = new Map(); // host only: player id -> the input last heard
 
+const playUi = document.getElementById('play');
 const lockOverlay = document.getElementById('lockOverlay');
 const statusLine = document.getElementById('status');
+const banner = document.getElementById('banner');
 const menuNote = document.getElementById('menuNote');
 const joinError = document.getElementById('joinError');
 const KIT_INTERACT = world.kit.userData.interact;
+
+const inWorld = () => currentScreen() === 'lobby' || currentScreen() === 'flight';
+
+// Where the floor is, and what blocks you, both depend on the phase: at
+// the dock there is a platform, a gangplank and an open cargo door.
+const groundAt = (x, z) => groundHeight(x, z, state.phase);
+function collidersFor(role) {
+  if (state.phase === 'flight') return world.flightColliders;
+  // The gangplank is barred until you are wearing a uniform.
+  return role === 'crew' ? world.lobbyGatedColliders : world.lobbyColliders;
+}
 
 const emptyInput = () => ({
   keys: {},
@@ -75,7 +88,7 @@ net.onHello = (name) => {
   const index = playerCount();
   const seated = newPlayer(`p${index}`, name || 'Deckhand', index);
   state.players[seated.id] = seated;
-  bodies.set(seated.id, createBody(seated.x, seated.z));
+  bodies.set(seated.id, createBody(seated.x, seated.y, seated.z));
   inputs.set(seated.id, emptyInput());
   return { id: seated.id, snapshot: snapshot() };
 };
@@ -113,6 +126,7 @@ net.onState = (incoming) => {
   if (!me) return;
   player.body.atWheel = me.atWheel;
   player.correct(me.x, me.y, me.z, RULES.correction);
+  showScreen(state.phase === 'flight' ? 'flight' : 'lobby');
 };
 
 net.onLost = () => leaveShip('The ship went out of range');
@@ -139,6 +153,7 @@ async function hostGame() {
     try {
       await net.host(code);
       local.code = code;
+      state.code = code; // painted on the board at the dock
       opened = true;
     } catch (err) {
       if (err.message !== 'taken') {
@@ -180,10 +195,11 @@ async function joinGame(code) {
 }
 
 function boardShip(me) {
-  player.enter(me.x, me.z, me.yaw);
+  player.enter(me.x, me.y, me.z, me.yaw);
   crew.sync(state.players, local.id);
   lockOverlay.hidden = false;
-  showScreen('flight');
+  playUi.hidden = false;
+  showScreen(state.phase === 'flight' ? 'flight' : 'lobby');
 }
 
 function leaveShip(message = '') {
@@ -195,6 +211,9 @@ function leaveShip(message = '') {
   lastHeard.clear();
   crew.sync({}, local.id);
   state.kit.heldBy = null;
+  state.phase = 'lobby';
+  state.countdown = null;
+  playUi.hidden = true;
   player.exit(scene);
   note(message);
   showScreen('menu');
@@ -207,7 +226,7 @@ function note(message) {
 
 player.controls.addEventListener('lock', () => (lockOverlay.hidden = true));
 player.controls.addEventListener('unlock', () => {
-  if (currentScreen() === 'flight') lockOverlay.hidden = false;
+  if (inWorld()) lockOverlay.hidden = false;
 });
 document.getElementById('clickToPlay').addEventListener('click', () => player.controls.lock());
 document.getElementById('leaveShip').addEventListener('click', () => leaveShip());
@@ -240,7 +259,7 @@ function hostTick(dt, now) {
     if (!body || !input) continue;
 
     body.atWheel = seated.atWheel;
-    stepBody(body, input, world.colliders, dt);
+    stepBody(body, input, collidersFor(seated.role), dt, groundAt);
     seated.x = body.position.x;
     seated.y = body.position.y;
     seated.z = body.position.z;
@@ -251,11 +270,10 @@ function hostTick(dt, now) {
       game.dropKit(seated, body, input.yaw ?? 0);
       input.drop = false;
     }
-    if (input.role !== null && input.role !== undefined) {
-      game.requestRole(seated, input.role);
-      input.role = null;
-    }
   }
+
+  game.tickLobby(dt);
+  if (state.phase === 'flight' && currentScreen() !== 'flight') showScreen('flight');
 
   hostInteractions.update(dt, state.players, bodies, inputs, {
     mayUse: game.mayUse,
@@ -297,16 +315,47 @@ function updateKit() {
   }
 }
 
+// What the dock is waiting for, in one line.
+function updateBanner() {
+  if (state.phase !== 'lobby') {
+    banner.textContent = '';
+    return;
+  }
+  const me = state.players[local.id];
+  const crewList = Object.values(state.players);
+  if (!me) return;
+
+  if (me.role === 'crew') {
+    const atRamp = Math.abs(me.x) < 2.5 && me.z > -6.5 && me.z < -2.5;
+    banner.textContent = atRamp ? 'Grab a uniform first' : 'Take a uniform from a locker';
+    return;
+  }
+  if (crewList.length < RULES.maxPlayers) {
+    banner.textContent = `Waiting for the crew (${crewList.length}/${RULES.maxPlayers})`;
+    return;
+  }
+  if (state.countdown === null) {
+    banner.textContent = crewList.some((p) => p.role === 'crew')
+      ? 'Waiting for everyone to dress'
+      : 'All aboard: up the gangplank';
+    return;
+  }
+  banner.textContent = `Casting off in ${Math.ceil(state.countdown)}`;
+}
+
 function updateStatus() {
   const me = state.players[local.id];
   if (!me) return;
-  const role = me.role[0].toUpperCase() + me.role.slice(1);
+  const role = me.role === 'crew' ? 'No uniform' : me.role[0].toUpperCase() + me.role.slice(1);
   const names = Object.values(state.players)
     .map((p) => (p.id === local.id ? `${p.name} (you)` : p.name))
     .join(', ');
+  // Power and the rudder only mean something once the ship is flying.
   const parts = [
     `Room ${local.code}${local.isHost ? ' (host)' : ''}`,
-    `${role} · power ${state.power.join('-')} · helm ${state.steering.toFixed(2)}`,
+    state.phase === 'flight'
+      ? `${role} · power ${state.power.join('-')} · helm ${state.steering.toFixed(2)}`
+      : role,
     `Crew: ${names}`,
   ];
   statusLine.textContent = parts.join('\n');
@@ -328,11 +377,12 @@ function loop() {
   const t = clock.elapsedTime;
   const now = performance.now();
 
-  // The ship rocks in the storm
-  ship.rotation.z = Math.sin(t * 0.8) * 0.06;
-  ship.rotation.x = Math.sin(t * 0.5) * 0.03;
+  // The ship rocks in the storm, but not while it is moored.
+  const rocking = state.phase === 'flight' ? 1 : 0;
+  ship.rotation.z = Math.sin(t * 0.8) * 0.06 * rocking;
+  ship.rotation.x = Math.sin(t * 0.5) * 0.03 * rocking;
 
-  if (currentScreen() === 'flight') {
+  if (inWorld()) {
     const input = player.readInput();
     if (local.isHost) {
       // The host plays through the same pipe as everyone else.
@@ -349,7 +399,7 @@ function loop() {
       leaveShip('The ship went out of range');
     } else {
       player.body.atWheel = state.players[local.id]?.atWheel ?? false;
-      player.predict(input, dt);
+      player.predict(input, dt, collidersFor(state.players[local.id]?.role ?? 'crew'), groundAt);
       queue(input);
       if (net.sendInput(pending, now)) {
         pending.useTap = false;
@@ -360,6 +410,7 @@ function loop() {
     crew.update(dt);
     view.update(dt);
     updateStatus();
+    updateBanner();
   } else {
     orbitShip(t);
   }
