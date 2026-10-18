@@ -1,0 +1,33 @@
+{
+  "name": "patch-it-up",
+  "version": "1.0.0",
+  "description": "3-player online co-op browser game: keep a leaky airship flying as the mechanic, engineer and pilot.",
+  "main": "vite.config.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "vite",
+    "host": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview",
+    "deploy": "vite build && gh-pages -d dist"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.21.0",
+    "peerjs": "^1.5.5",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
+    "eslint": "^10.13.0",
+    "gh-pages": "^6.3.0",
+    "prettier": "^3.9.10",
+    "vite": "^8.3.4"
+  }
+}
