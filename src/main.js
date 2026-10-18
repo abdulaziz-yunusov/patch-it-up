@@ -2,7 +2,7 @@
 
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
-import { buildShip } from './ship.js';
+import { buildShip, addLights, addSky } from './world.js';
 import { showScreen, currentScreen } from './screens.js';
 import { initMenu, playerName } from './menu.js';
 
@@ -12,17 +12,14 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 document.body.prepend(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color('#353a68');
-scene.fog = new THREE.Fog('#353a68', 20, 120);
+addSky(scene);
+addLights(scene);
 
 const camera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 0.1, 400);
 
-scene.add(new THREE.HemisphereLight('#ffd58a', '#2d3459', 1.2));
-const sun = new THREE.DirectionalLight('#ffffff', 1.2);
-sun.position.set(5, 10, 3);
-scene.add(sun);
-
-const ship = buildShip();
+// world.colliders is the list of solid boxes step 3 walks into.
+const world = buildShip();
+const ship = world.ship;
 scene.add(ship);
 
 // Walking around is the step 3 job of player.js; this is the prototype kept alive
@@ -59,7 +56,7 @@ initMenu({
 });
 
 function boardShip() {
-  camera.position.set(-6, 1.6, 0);
+  camera.position.set(-10, 1.6, 0);
   camera.rotation.set(0, -Math.PI / 2, 0);
   lockOverlay.hidden = false;
   showScreen('flight');
