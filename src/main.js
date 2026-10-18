@@ -31,7 +31,7 @@ import { initJoin, joinFailed, joinSucceeded, openJoin } from './join.js';
 import { load, save } from './save.js';
 import { keyLabel, moveLabel, onSettingsChange, settings } from './settings.js';
 import { closeSettings, initSettings, isSettingsOpen, openSettings } from './settingsScreen.js';
-import { PALETTES, fillRoleKey } from './roleLook.js';
+import { PALETTES, fillRoleKey, inkFor } from './roleLook.js';
 import { createRain } from './rain.js';
 import { resetSubtitles, updateSubtitles } from './subtitles.js';
 
@@ -72,8 +72,8 @@ const view = new InteractionView({
   ship,
   camera,
   player,
-  roleOf: () => state.players[local.id]?.role ?? 'crew',
-  mayUse: game.mayUse,
+  me: () => state.players[local.id],
+  canUse: game.canUse,
 });
 
 const net = new Net();
@@ -125,6 +125,7 @@ const emptyInput = () => ({
   useTap: false,
   drop: false,
   bell: false,
+  callout: false,
   again: false,
 });
 
@@ -321,6 +322,8 @@ function leaveShip(message = '') {
   resetEngineEffects();
   resetGathering();
   resetSubtitles();
+  seenCallout = null;
+  calloutBox.hidden = true;
   if (isSettingsOpen()) closeSettings();
   refreshNameChip();
   note(message);
@@ -376,6 +379,7 @@ function queue(input) {
   pending.useTap = pending.useTap || input.useTap;
   pending.drop = pending.drop || input.drop;
   pending.bell = pending.bell || input.bell;
+  pending.callout = pending.callout || input.callout;
   pending.again = pending.again || input.again;
 }
 
@@ -417,6 +421,10 @@ function hostTick(dt, now) {
       input.bell = false;
       if (seated.role === 'pilot') game.ringCabinBell();
     }
+    if (input.callout) {
+      input.callout = false;
+      game.callOut(seated);
+    }
     if (input.again) {
       input.again = false;
       returnToDock();
@@ -428,7 +436,7 @@ function hostTick(dt, now) {
   else if (state.phase === 'flight') game.tickFlight(dt);
 
   hostInteractions.update(dt, state.players, bodies, inputs, {
-    mayUse: game.mayUse,
+    canUse: game.canUse,
     run: (interact, seated, body) => game.ACTIONS[interact.action]?.(interact, seated, body),
   });
 
@@ -539,6 +547,67 @@ function updateTakeoff() {
   takeoffJob.textContent = JOBS[role]?.() ?? '';
 }
 
+// The ship panel: each tube's units, how hot it runs, a blown fuse; the
+// power budget and what is draining it; the mechanic's planks and fuses.
+const tubeRows = [...document.querySelectorAll('#shipPanel .tube-row')].map((row) => ({
+  row,
+  pips: [...row.querySelectorAll('.pips i')],
+  heat: row.querySelector('.heat span'),
+  fuse: row.querySelector('.fuse-tag'),
+}));
+const budgetText = document.getElementById('budgetText');
+const budgetNote = document.getElementById('budgetNote');
+const plankText = document.getElementById('plankText');
+const fuseText = document.getElementById('fuseText');
+
+function updateShipPanel() {
+  tubeRows.forEach(({ row, pips, heat, fuse }, i) => {
+    const blown = !!state.blown[i];
+    const hot = state.tubeHeat[i] / RULES.overheatSeconds;
+    pips.forEach((pip, k) => pip.classList.toggle('on', k < state.power[i]));
+    heat.style.width = `${Math.round(Math.min(1, hot) * 100)}%`;
+    row.classList.toggle('hot', !blown && state.tubeHeat[i] >= RULES.overheatWarn);
+    row.classList.toggle('blown', blown);
+    fuse.hidden = !blown;
+  });
+  const total = state.spare + state.power.reduce((a, b) => a + b, 0);
+  budgetText.textContent = `Budget ${total}`;
+  budgetNote.textContent = state.drain
+    ? `−${state.drain} from breaches`
+    : state.spare
+      ? `${state.spare} spare`
+      : 'All used';
+  budgetNote.classList.toggle('bad', state.drain > 0);
+  const planks = state.kit.planks ?? 0;
+  plankText.textContent = `Kit ${planks} plank${planks === 1 ? '' : 's'}`;
+  plankText.classList.toggle('bad', planks === 0);
+  fuseText.textContent = `Fuses ${state.fuses}`;
+  fuseText.classList.toggle('bad', state.fuses === 0);
+}
+
+// A call-out: the caller's name and words in their role colour, with the
+// speaking-tube echo, for everyone aboard.
+const calloutBox = document.getElementById('callout');
+const calloutWho = document.getElementById('calloutWho');
+const calloutWords = document.getElementById('calloutText');
+let seenCallout = null;
+let calloutUntil = 0;
+function updateCallout(now) {
+  const call = state.callout;
+  if (seenCallout === null) seenCallout = call.count; // joining late: no old news
+  if (call.count !== seenCallout) {
+    seenCallout = call.count;
+    calloutUntil = now + 3500;
+    calloutWho.textContent = call.id === local.id ? 'You called' : `${call.name} called`;
+    calloutWords.textContent = call.text;
+    const color = ROLE_COLORS[call.role] ?? ROLE_COLORS.crew;
+    calloutBox.style.background = color;
+    calloutBox.style.color = inkFor(color);
+    play('comms_speaking_tube_echo', 0.55);
+  }
+  calloutBox.hidden = now > calloutUntil;
+}
+
 // What the dock is waiting for, in one line.
 function updateBanner() {
   if (state.phase !== 'lobby') {
@@ -571,6 +640,11 @@ function updateStatus() {
   const me = state.players[local.id];
   if (!me) return;
   const role = me.role === 'crew' ? 'No uniform' : me.role[0].toUpperCase() + me.role.slice(1);
+  const holding = me.fuse
+    ? 'a spare fuse'
+    : state.kit.heldBy === me.id
+      ? `the patch kit (${state.kit.planks} plank${state.kit.planks === 1 ? '' : 's'})`
+      : 'nothing';
   const names = Object.values(state.players)
     .map((p) => (p.id === local.id ? `${p.name} (you)` : p.name))
     .join(', ');
@@ -578,7 +652,7 @@ function updateStatus() {
   const parts = [
     `Room ${local.code}${local.isHost ? ' (host)' : ''}`,
     state.phase === 'flight'
-      ? `${role} · power ${state.power.join('-')} +${state.spare} · helm ${state.steering.toFixed(2)}`
+      ? `${role} · holding ${holding}`
       : `${role} · ${ROUTES[state.route].name}`,
     `Crew: ${names}`,
   ];
@@ -633,6 +707,7 @@ function loop() {
           useTap: own.useTap || input.useTap,
           drop: own.drop || input.drop,
           bell: own.bell || input.bell,
+          callout: own.callout || input.callout,
           again: own.again || input.again,
         });
       }
@@ -647,6 +722,7 @@ function loop() {
         pending.useTap = false;
         pending.drop = false;
         pending.bell = false;
+        pending.callout = false;
         pending.again = false;
       }
     }
@@ -657,6 +733,8 @@ function loop() {
     updateRoundHud(now);
     updateTakeoff();
     updateSubtitles(state, now, settings.subtitles, subtitleLine);
+    updateCallout(now);
+    if (state.phase === 'flight') updateShipPanel();
   } else {
     orbitShip(t);
   }
@@ -743,7 +821,7 @@ applySettings(null);
 if (import.meta.env.DEV) {
   window.patch = {
     scene, camera, ship, world, player, crew, view,
-    state, local, net, game, bodies, inputs, RULES, THREE,
+    state, local, net, game, bodies, inputs, RULES, THREE, hostInteractions, renderer,
   };
 }
 

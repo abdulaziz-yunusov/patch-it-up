@@ -18,6 +18,7 @@ export const ACTIONS = [
   { id: 'interact', label: 'Interact' },
   { id: 'drop', label: 'Drop item' },
   { id: 'bell', label: 'Ring bell (pilot)' },
+  { id: 'callout', label: 'Call out' },
 ];
 
 const DEFAULT_KEYS = {
@@ -29,7 +30,11 @@ const DEFAULT_KEYS = {
   interact: 'KeyE',
   drop: 'Mouse2',
   bell: 'KeyF',
+  callout: 'KeyQ',
 };
+
+// Where an action goes when its default key is already taken.
+const SPARE_KEYS = ['KeyR', 'KeyG', 'KeyT', 'KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB'];
 
 // Esc always frees the mouse (the browser insists); the rest would close
 // the game, reload it or open the browser's own tools.
@@ -73,9 +78,14 @@ function readSaved() {
     const code = savedKeys[id];
     if (typeof code === 'string' && /^[A-Za-z0-9]{1,24}$/.test(code) && !RESERVED.includes(code)) keys[id] = code;
   }
+  // A clash (say a new action whose default the player already uses
+  // elsewhere) moves the later action to its default, or to a free key.
+  const usedByOther = (code, self) => ACTIONS.some(({ id }) => id !== self && keys[id] === code);
   const seen = new Set();
   for (const { id } of ACTIONS) {
-    if (seen.has(keys[id])) keys[id] = DEFAULT_KEYS[id];
+    if (seen.has(keys[id])) {
+      keys[id] = [DEFAULT_KEYS[id], ...SPARE_KEYS].find((code) => !usedByOther(code, id)) ?? keys[id];
+    }
     seen.add(keys[id]);
   }
   // A default can still collide with a saved key: then all go back.

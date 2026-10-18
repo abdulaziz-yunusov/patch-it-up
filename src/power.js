@@ -1,23 +1,29 @@
 // The engineer's power room from Blender (public/models/power_room.glb).
 // The coded tubes and levers stay exactly where they were; the model adds
 // glass casings and scales around them, a dynamo whose flywheel spins with
-// the engines, an engine-order telegraph, a steam valve anyone can turn,
+// the engines, an engine-order telegraph, the vent valve, the fuse box,
 // a workbench, a battery rack, pipes and lamps.
+//
+// The vent valve (station_steam_valve) is the engineer's: held for three
+// seconds in flight it cools every tube. The fuse box takes a spare fuse
+// from the mechanic; its lamps 0..2 show the engines, shields and lift
+// fuses (green fine, flashing red blown), lamp 3 the main supply.
 //
 // Driven parts (custom property `drive` in Blender):
 //   flywheel   spins faster the more power the engines have
 //   telegraph  needle points at the engine power (STOP .. FULL)
 //   altitude   the big gauge on the power wall, so the engineer sees height
-// lamp_warning blinks while any tube is empty.
+// lamp_warning blinks while any tube is empty, overheating or blown.
 
 import * as THREE from 'three';
-import { RULES } from './state.js';
+import { RULES, livePower } from './state.js';
 import { play } from './sound.js';
 import { loadRoom } from './rooms.js';
 
 const STATIONS = {
-  steam: { label: 'Turn the steam valve', action: 'steam' },
+  steam: { label: 'Vent the tubes (hold)', action: 'steam', role: 'engineer', hold: RULES.ventSeconds },
 };
+const FUSE_BOX = { label: 'Replace the fuse (hold)', action: 'fuse', hold: RULES.fuseSeconds };
 
 const PUFFS = 7;
 
@@ -64,7 +70,15 @@ export async function loadPowerModel(world) {
     }
   }
 
+  // Every part of the fuse box is one station.
+  model.traverse((obj) => {
+    if (obj.isMesh && /^(fuse_box|fuse_switch_)/.test(obj.name)) obj.userData.interact = FUSE_BOX;
+  });
+  const fuseLamps = [0, 1, 2, 3].map((i) => model.getObjectByName(`lamp_fuse_${i}`)).filter(Boolean);
+  for (const lamp of fuseLamps) lamp.material.emissive.set('#5cd68a');
+
   world.power = {
+    fuseLamps,
     flywheel: drives.flywheel ?? null,
     telegraph: drives.telegraph ?? null,
     gauge: drives.altitude ?? null,
@@ -86,7 +100,7 @@ const lerp = (a, b, t) => a + (b - a) * t;
 export function updatePower(world, state, { now, dt }) {
   const room = world.power;
   if (!room) return;
-  const engines = state.power[0] / RULES.maxPerTube;
+  const engines = livePower(0) / RULES.maxPerTube;
 
   // At the dock the dynamo idles; once cast off it runs with the engines.
   if (room.flywheel) {
@@ -102,9 +116,20 @@ export function updatePower(world, state, { now, dt }) {
     room.gauge.rotation.z = lerp(-2.2, 2.2, height);
   }
 
-  // Any empty tube: the warning lamp blinks.
-  const empty = state.power.some((units) => units === 0);
-  const blink = empty && Math.floor(now / 350) % 2 === 0;
+  // Fuse lamps: steady green, or flashing red for a blown fuse.
+  const flash = Math.floor(now / 250) % 2 === 0;
+  room.fuseLamps.forEach((lamp, i) => {
+    const blown = !!state.blown?.[i];
+    lamp.material.color.set(blown ? '#e2574c' : '#5cd68a');
+    lamp.material.emissive.set(blown ? '#ff3b2e' : '#5cd68a');
+    lamp.material.emissiveIntensity = blown ? (flash ? 3 : 0.2) : 1.2;
+  });
+
+  // Any empty, dead or overheating tube: the warning lamp blinks.
+  const trouble =
+    [0, 1, 2].some((i) => livePower(i) === 0) ||
+    state.tubeHeat?.some((t) => t >= RULES.overheatWarn);
+  const blink = trouble && Math.floor(now / 350) % 2 === 0;
   if (room.warning) room.warning.material.emissiveIntensity = blink ? 3 : 0.15;
   if (room.warningLight) room.warningLight.intensity = blink ? 1.5 : 0;
 

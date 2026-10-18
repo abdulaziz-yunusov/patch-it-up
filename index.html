@@ -255,6 +255,7 @@
       <div id="status"></div>
       <div id="toast" hidden></div>
       <div id="subtitle" aria-live="polite" hidden></div>
+      <div id="callout" role="status" hidden><span id="calloutWho"></span><strong id="calloutText"></strong></div>
       <div id="lockOverlay">
         <button id="clickToPlay" type="button" class="primary big">Click to play</button>
         <button id="openSettings" type="button">Settings</button>
@@ -265,7 +266,7 @@
     <div id="lobby" class="screen" hidden>
       <div id="banner"></div>
       <div class="hud">
-        <span data-key="move">WASD</span> move · mouse look · <span data-key="interact">E</span> use · Esc frees the mouse<br />
+        <span data-key="move">WASD</span> move · mouse look · <span data-key="interact">E</span> use · <span data-key="callout">Q</span> call out · Esc frees the mouse<br />
         Take a uniform from a locker, then up the gangplank. The ship leaves when all three are aboard.<br />
         Ring the bell, shout down the tube, try a hat at the mirror, kick the crates.
       </div>
@@ -278,7 +279,7 @@
         <div id="takeoffJob"></div>
       </div>
       <div class="hud">
-        <span data-key="move">WASD</span> move · mouse look · <span data-key="interact">E</span> use · <span data-key="drop">Right click</span> drop · Esc frees the mouse
+        <span data-key="move">WASD</span> move · mouse look · <span data-key="interact">E</span> use · <span data-key="drop">Right click</span> drop · <span data-key="callout">Q</span> call out · Esc frees the mouse
       </div>
     </div>
 
@@ -291,8 +292,33 @@
         <div id="furnaceText">Furnace</div>
       </div>
       <div id="flash"></div>
+      <!-- What the whole crew needs to see: the tubes, the power budget,
+           and the mechanic's supplies. -->
+      <div id="shipPanel" aria-label="Ship systems">
+        <div class="panel-head"><span>Power</span><span class="panel-sub">heat</span></div>
+        <div class="tube-row" data-tube="0">
+          <span class="tube-name">Engines</span>
+          <span class="pips"><i></i><i></i><i></i><i></i></span>
+          <span class="heat"><span></span></span>
+          <span class="fuse-tag" hidden>FUSE</span>
+        </div>
+        <div class="tube-row" data-tube="1">
+          <span class="tube-name">Shields</span>
+          <span class="pips"><i></i><i></i><i></i><i></i></span>
+          <span class="heat"><span></span></span>
+          <span class="fuse-tag" hidden>FUSE</span>
+        </div>
+        <div class="tube-row" data-tube="2">
+          <span class="tube-name">Lift</span>
+          <span class="pips"><i></i><i></i><i></i><i></i></span>
+          <span class="heat"><span></span></span>
+          <span class="fuse-tag" hidden>FUSE</span>
+        </div>
+        <div class="panel-foot"><span id="budgetText">Budget 6</span><span id="budgetNote"></span></div>
+        <div class="panel-foot supplies"><span id="plankText">Kit 3 planks</span><span id="fuseText">Fuses 3</span></div>
+      </div>
       <div class="hud">
-        <span data-key="move">WASD</span> move · mouse look · <span data-key="interact">E</span> use · <span data-key="drop">Right click</span> drop · Esc frees the mouse
+        <span data-key="move">WASD</span> move · mouse look · <span data-key="interact">E</span> use · <span data-key="drop">Right click</span> drop · <span data-key="callout">Q</span> call out · Esc frees the mouse
       </div>
     </div>
 

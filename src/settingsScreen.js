@@ -13,7 +13,6 @@ const FIXED_ROWS = [
   { label: 'Menu / free the mouse', key: 'Esc', note: 'Set by the browser' },
   { label: 'Push-to-talk', key: 'V', note: 'Soon' },
   { label: 'Ping', key: 'Middle click', note: 'Soon' },
-  { label: 'Callout wheel', key: 'Q', note: 'Soon' },
 ];
 
 let overlay = null;

@@ -260,6 +260,7 @@ export class LocalPlayer {
       useTap: this.taps.has(bound.interact),
       drop: this.taps.has(bound.drop),
       bell: this.taps.has(bound.bell),
+      callout: this.taps.has(bound.callout),
     };
     this.taps.clear();
     return input;

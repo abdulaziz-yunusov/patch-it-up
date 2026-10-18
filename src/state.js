@@ -27,6 +27,23 @@ export const RULES = {
   stokeSeconds: 1, // hold E at the furnace this long for one shovel of coal
   maxUnits: 8, // power units a roaring furnace makes
 
+  // Tubes run hot at full power: 15 s at 4 units blows the fuse. Below
+  // full they cool slowly (a quarter as fast as they heat), so heat from
+  // bursts at full power adds up; only venting clears it at once.
+  overheatSeconds: 15,
+  overheatWarn: 10, // from here the tube glows and the crew is warned
+  coolRate: 0.25,
+  ventSeconds: 3, // hold the vent valve this long
+  fuseSeconds: 2, // hold at the fuse box this long to fit a new fuse
+  spareFuses: 3, // in the engine room's crate, per round
+  breachDrain: 1, // power units lost per breach in the engine or power room
+
+  // The patch kit: one plank per breach, restocked at the supply rack.
+  kitPlanks: 3,
+  restockSeconds: 1.5,
+
+  calloutCooldownMs: 2000, // one call-out per player this often
+
   maxPerTube: 4,
   patchSeconds: 2.5,
   steerRate: 0.9,
@@ -95,6 +112,11 @@ export const state = {
   players: {}, // id -> { id, name, role, x, y, z, yaw, atWheel }
   power: [2, 2, 2], // units in the engine, shield and lift tubes
   spare: 0, // units the furnace has made that no tube holds yet
+  tubeHeat: [0, 0, 0], // seconds each tube has run at full power
+  blown: [false, false, false], // a blown fuse: that tube is offline, its units stuck
+  fuses: RULES.spareFuses, // spare fuses left in the engine room crate
+  drain: 0, // power units the breaches in the engine and power rooms cost now
+  callout: { count: 0, id: '', name: '', role: '', text: '' }, // the last call-out
   heat: RULES.heatStart, // the furnace, 0 (out) .. 1 (roaring)
   climb: 0, // per cent per second altitude is changing, for the HUD
   breaches: {}, // id -> true while that hole is open
@@ -106,7 +128,7 @@ export const state = {
   altitude: RULES.altitudeStart,
   timeLeft: RULES.roundSeconds,
   result: null, // 'landed' or 'down', once the round ends
-  kit: { heldBy: null, ...KIT_HOME },
+  kit: { heldBy: null, planks: RULES.kitPlanks, ...KIT_HOME },
 
   // The dock's toys, all shared so everyone sees the same thing.
   route: 0, // index into ROUTES
@@ -135,6 +157,7 @@ export function newPlayer(id, name, index) {
     atWheel: false,
     hat: 0, // index into HATS, changed at the mirror
     signal: 'good', // 'weak' when the host has not heard from them lately
+    fuse: false, // carrying a spare fuse from the engine room
   };
 }
 
@@ -147,6 +170,11 @@ export function snapshot() {
     players: state.players,
     power: state.power,
     spare: state.spare,
+    tubeHeat: state.tubeHeat,
+    blown: state.blown,
+    fuses: state.fuses,
+    drain: state.drain,
+    callout: state.callout,
     heat: state.heat,
     climb: state.climb,
     breaches: state.breaches,
@@ -178,6 +206,11 @@ export function applySnapshot(s) {
   state.players = s.players ?? {};
   state.power = s.power ?? state.power;
   state.spare = s.spare ?? state.spare;
+  state.tubeHeat = s.tubeHeat ?? state.tubeHeat;
+  state.blown = s.blown ?? state.blown;
+  state.fuses = s.fuses ?? state.fuses;
+  state.drain = s.drain ?? 0;
+  state.callout = s.callout ?? state.callout;
   state.heat = s.heat ?? state.heat;
   state.climb = s.climb ?? 0;
   state.breaches = s.breaches ?? state.breaches;
@@ -198,6 +231,11 @@ export function applySnapshot(s) {
   state.shout = s.shout ?? state.shout;
   state.lampsOn = s.lampsOn ?? state.lampsOn;
   state.props = s.props ?? state.props;
+}
+
+// What a tube actually delivers: nothing while its fuse is blown.
+export function livePower(i) {
+  return state.blown[i] ? 0 : state.power[i];
 }
 
 export function roleTaken(role, exceptId) {

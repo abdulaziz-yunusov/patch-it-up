@@ -9,12 +9,14 @@
 //   piston_0..2  pump up and down, faster with more engine power
 //   flywheel     spins with the engine
 //   rpm          the gauge on the engine's front
+// The supply rack restocks the patch kit's planks; the big crate at the
+// stern holds the spare fuses the engineer's fuse box needs.
 // station_furnace: the mechanic stokes it (hold E). In flight its heat is
 // the ship's power budget, so the fire burns brighter or dimmer with it;
 // every stoke flares for the whole crew.
 
 import * as THREE from 'three';
-import { RULES } from './state.js';
+import { RULES, livePower } from './state.js';
 import { play } from './sound.js';
 import { loadRoom } from './rooms.js';
 
@@ -37,6 +39,16 @@ export async function loadEngineModel(world) {
   });
   if (!room) return false;
   const { model, drives } = room;
+
+  // Stations the model has no custom property for: every piece of the
+  // rack, and of the crate, points at one interact object.
+  const restock = { label: 'Restock planks (hold)', action: 'restock', role: 'mechanic', hold: RULES.restockSeconds };
+  const fuses = { label: 'Take a spare fuse', action: 'takeFuse', role: 'mechanic' };
+  model.traverse((obj) => {
+    if (!obj.isMesh) return;
+    if (/^(supply_|col_supply)/.test(obj.name)) obj.userData.interact = restock;
+    if (/^(crate_big|crate_top|crate_rope|col_crate_big)/.test(obj.name)) obj.userData.interact = fuses;
+  });
 
   // The model's engine and furnace replace the coded box and cube. Only the
   // meshes go: the colliders built from them stay in every list.
@@ -90,7 +102,7 @@ export function updateEngineRoom(world, state, { now, dt }) {
   if (!room) return;
 
   // Once cast off the engine runs with its power; at the dock it ticks over.
-  const engines = state.power[0] / RULES.maxPerTube;
+  const engines = livePower(0) / RULES.maxPerTube;
   const speed = state.phase !== 'lobby' ? 2 + engines * 10 : 1.5;
   room.phase += speed * dt;
 

@@ -9,6 +9,7 @@ import { BREACH_SPOTS, ROOMS } from './world.js';
 const SHOW_MS = 3200;
 const ROOM_NAMES = Object.fromEntries(ROOMS.map((r) => [r.id, r.name.toLowerCase()]));
 const SPOT_ROOM = Object.fromEntries(BREACH_SPOTS.map((s) => [s.id, s.room]));
+const TUBES = ['Engines', 'Shields', 'Lift'];
 
 let seen = null;
 let queue = []; // { text, until }
@@ -22,6 +23,10 @@ function remember(state) {
     bell: state.bell,
     lowAltitude: state.altitude <= 30,
     coldFurnace: state.heat <= 0.25,
+    hot: state.tubeHeat.map((t) => t >= RULES.overheatWarn),
+    blown: [...state.blown],
+    planks: state.kit.planks,
+    callout: state.callout.count,
   };
 }
 
@@ -46,6 +51,13 @@ export function updateSubtitles(state, now, on, el) {
     if (state.bell !== was.bell) say('[The dock bell rings]', now);
     if (flying && seen.lowAltitude && !was.lowAltitude) say('[Altitude low!]', now);
     if (flying && seen.coldFurnace && !was.coldFurnace && state.timeLeft < RULES.roundSeconds) say('[The furnace is going cold]', now);
+    TUBES.forEach((name, i) => {
+      if (flying && seen.hot[i] && !was.hot[i] && !seen.blown[i]) say(`[${name} overheating! Vent or lower it]`, now);
+      if (seen.blown[i] && !was.blown[i]) say(`[${name} fuse blown! Spare fuses: crate in the engine room]`, now);
+      if (flying && !seen.blown[i] && was.blown[i]) say(`[${name} back online]`, now);
+    });
+    if (flying && seen.planks === 0 && was.planks > 0) say('[Patch kit empty: restock at the supply rack]', now);
+    if (seen.callout !== was.callout && state.callout.text) say(`[${state.callout.name}: ${state.callout.text}]`, now);
   }
 
   queue = queue.filter((line) => line.until > now);

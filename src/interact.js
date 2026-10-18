@@ -23,12 +23,14 @@ function firstInteractive(ship, raycaster) {
 // What this browser shows you: the prompt and the hold bar. The action
 // itself belongs to the host, so nothing here changes the game.
 export class InteractionView {
-  constructor({ ship, camera, player, roleOf, mayUse }) {
+  // me() is this browser's player in the shared state; canUse(interact,
+  // player) says why a station cannot be used right now, or null.
+  constructor({ ship, camera, player, me, canUse }) {
     this.ship = ship;
     this.camera = camera;
     this.player = player;
-    this.roleOf = roleOf;
-    this.mayUse = mayUse;
+    this.me = me;
+    this.canUse = canUse;
     this.raycaster = new THREE.Raycaster();
     this.raycaster.far = RULES.reach;
     this.target = null;
@@ -53,8 +55,9 @@ export class InteractionView {
     }
 
     const interact = target?.userData.interact ?? null;
-    const allowed = interact ? this.mayUse(interact, this.roleOf()) : false;
-    this.showPrompt(interact, allowed);
+    const reason = interact ? this.canUse(interact, this.me()) : null;
+    const allowed = Boolean(interact) && reason === null;
+    this.showPrompt(interact, reason);
 
     // The bar is a mirror of the host's timer, not the timer itself.
     if (interact?.hold && allowed && this.player.isDown('interact') && locked) {
@@ -66,16 +69,15 @@ export class InteractionView {
     }
   }
 
-  showPrompt(interact, allowed) {
+  showPrompt(interact, reason) {
     if (!interact) {
       this.prompt.hidden = true;
       return;
     }
-    const role = interact.role ? interact.role[0].toUpperCase() + interact.role.slice(1) : '';
     this.prompt.hidden = false;
-    this.prompt.classList.toggle('denied', !allowed);
+    this.prompt.classList.toggle('denied', reason !== null);
     const key = keyLabel(settings.keys.interact);
-    this.prompt.textContent = allowed ? `${key} ${DOT} ${interact.label}` : `${role} only`;
+    this.prompt.textContent = reason ?? `${key} ${DOT} ${interact.label}`;
   }
 
   showProgress(fraction) {
@@ -96,7 +98,7 @@ export class HostInteractions {
     this._quaternion = new THREE.Quaternion();
   }
 
-  update(dt, players, bodies, inputs, { mayUse, run }) {
+  update(dt, players, bodies, inputs, { canUse, run }) {
     for (const player of Object.values(players)) {
       const body = bodies.get(player.id);
       const input = inputs.get(player.id);
@@ -104,7 +106,7 @@ export class HostInteractions {
 
       const target = this.lookFrom(body, input);
       const interact = target?.userData.interact ?? null;
-      if (!interact || !mayUse(interact, player.role)) {
+      if (!interact || canUse(interact, player) !== null) {
         this.holds.delete(player.id);
         input.useTap = false;
         continue;

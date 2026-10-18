@@ -16,7 +16,7 @@
 //   lamp_*              glowing glass; light_* empties get a point light
 
 import * as THREE from 'three';
-import { RULES, ROUTES } from './state.js';
+import { RULES, ROUTES, livePower } from './state.js';
 import { settings } from './settings.js';
 import { play } from './sound.js';
 import { toast } from './dock.js';
@@ -72,14 +72,14 @@ export function updateHelm(world, state, { camera, view, player, now, dt }) {
   const { altitude, speed, heading } = helm.needles;
   if (altitude) altitude.rotation.x = lerp(-2.2, 2.2, THREE.MathUtils.clamp(state.altitude / RULES.altitudeStart, 0, 1));
   if (speed) {
-    const engines = state.power[0] / RULES.maxPerTube;
+    const engines = livePower(0) / RULES.maxPerTube;
     const shake = state.phase !== 'lobby' ? Math.sin(now / 60) * 0.04 : 0;
     speed.rotation.x = lerp(-2.2, 2.2, engines) + shake;
   }
   if (heading) heading.rotation.y = -state.steering * 0.9 + Math.sin(now / 900) * 0.05;
   helm.indicators.forEach((lamp, i) => {
     if (!lamp) return;
-    const units = state.power[i] ?? 0;
+    const units = livePower(i);
     lamp.material.emissiveIntensity = units === 0 ? 0.05 : 0.6 + units * 0.6;
   });
   if (helm.clock) {

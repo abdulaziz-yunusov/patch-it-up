@@ -29,6 +29,9 @@ export const GANGPLANK = { halfWidth: 1, zFoot: -5, zTop: -3 };
 // Where the pilot stands when they take the wheel: one stride behind it.
 export const HELM_STANCE = { x: 8.9, z: 0, look: -Math.PI / 2 };
 
+const TUBE_COOL = new THREE.Color('#6b7183');
+const TUBE_HOT = new THREE.Color('#ff5a2e');
+
 // Power tubes: 0 units is a stub, maxPerTube fills the tube.
 // Starboard wall: the port side of the power room is the cargo doorway.
 const TUBE = { min: 0.4, max: 2, size: 0.4, z: 2.4, xs: [-1.2, 0, 1.2] };
@@ -277,6 +280,16 @@ export function applyState(world, state, localAtWheel = false) {
     const height = TUBE.min + (state.power[i] / RULES.maxPerTube) * (TUBE.max - TUBE.min);
     tube.scale.y = height;
     tube.position.y = height / 2;
+    // Grey when cool, glowing orange-red as it nears a blown fuse, dark
+    // once the fuse has gone.
+    const hot = Math.min(1, (state.tubeHeat?.[i] ?? 0) / RULES.overheatSeconds);
+    if (state.blown?.[i]) {
+      tube.material.color.set('#26272d');
+      tube.material.emissive.set('#000000');
+    } else {
+      tube.material.color.set(TUBE_COOL).lerp(TUBE_HOT, hot);
+      tube.material.emissive.set(TUBE_HOT).multiplyScalar(hot * hot * 0.8);
+    }
   });
   // A lever says whether it will place a spare unit or steal one.
   const leverLabel = state.spare > 0 ? `Power up (${state.spare} spare)` : 'Power up';
@@ -366,7 +379,8 @@ function buildStations(ship, colliders, solid, box, metal) {
   const levers = [];
   TUBE.xs.forEach((x, i) => {
     // Unit-height geometry, scaled by applyState as power moves.
-    const tube = new THREE.Mesh(box(TUBE.size, 1, TUBE.size), metal);
+    // Its own material, so it can glow as it overheats.
+    const tube = new THREE.Mesh(box(TUBE.size, 1, TUBE.size), metal.clone());
     tube.name = `tube${i}`;
     tube.position.set(x, 0.5, TUBE.z);
     ship.add(tube);

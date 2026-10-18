@@ -1831,3 +1831,166 @@ legend.set-label {
   border-radius: 6px;
   pointer-events: none;
 }
+
+/* --- Ship panel (flight) -------------------------------------------------
+   Top right: each tube's units as pips, its heat, a blown fuse; the
+   power budget; the mechanic's supplies. Everyone sees the same panel. */
+
+#shipPanel {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: calc(250px * var(--hud-scale, 1));
+  padding: 10px 14px;
+  font-size: calc(14px * var(--hud-scale, 1));
+  font-weight: 800;
+  background: rgba(27, 32, 57, 0.9);
+  border-radius: 14px;
+}
+
+.panel-head,
+.panel-foot {
+  display: flex;
+  justify-content: space-between;
+}
+
+.panel-head span:first-child {
+  color: #9fe3b8;
+}
+
+.panel-sub {
+  font-size: 0.85em;
+  color: #c9cff0;
+}
+
+.panel-foot {
+  padding-top: 6px;
+  color: #c9cff0;
+  border-top: 2px solid #2d3459;
+}
+
+.panel-foot .bad {
+  color: #ff8a7a;
+}
+
+.tube-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 6px;
+}
+
+.tube-name {
+  width: 4.6em;
+  color: #c9cff0;
+}
+
+.pips {
+  display: flex;
+  gap: 3px;
+}
+
+.pips i {
+  width: 1.55em;
+  height: 1em;
+  background: #2d3459;
+  border-radius: 4px;
+}
+
+.tube-row[data-tube="0"] .pips i.on {
+  background: #ff8f3a;
+}
+
+.tube-row[data-tube="1"] .pips i.on {
+  background: #7fd4ff;
+}
+
+.tube-row[data-tube="2"] .pips i.on {
+  background: #ffd84d;
+}
+
+.heat {
+  width: 2.4em;
+  height: 0.45em;
+  overflow: hidden;
+  background: #2d3459;
+  border-radius: 3px;
+}
+
+.heat span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: #ff8f3a;
+}
+
+/* Nearly blown: the row flashes red. */
+.tube-row.hot {
+  animation: tube-hot 0.6s steps(2) infinite;
+}
+
+.tube-row.hot .heat span {
+  background: #ff3b2e;
+}
+
+@keyframes tube-hot {
+  50% {
+    background: rgba(226, 87, 76, 0.45);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tube-row.hot {
+    animation: none;
+    background: rgba(226, 87, 76, 0.45);
+  }
+}
+
+.tube-row.blown .pips i.on {
+  background: #4a4c57;
+}
+
+.tube-row.blown .tube-name {
+  color: #ff8a7a;
+}
+
+.fuse-tag {
+  padding: 0 5px;
+  font-size: 0.8em;
+  color: #fff4dc;
+  background: #c9443a;
+  border-radius: 4px;
+}
+
+/* --- Call-outs ----------------------------------------------------------
+   The caller's words in their role colour, under the timer. */
+
+#callout {
+  position: absolute;
+  left: 50%;
+  top: calc(196px * var(--hud-scale, 1));
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 20px 8px;
+  border: 4px solid #3b2516;
+  border-radius: 14px;
+  box-shadow: 0 5px 0 #3b2516;
+  white-space: nowrap;
+}
+
+#calloutWho {
+  font-size: calc(13px * var(--hud-scale, 1));
+  font-weight: 800;
+}
+
+#calloutText {
+  font-family: 'Lilita One', 'Arial Black', sans-serif;
+  font-weight: 400;
+  font-size: calc(26px * var(--hud-scale, 1));
+  line-height: 1.1;
+}
