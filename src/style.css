@@ -160,3 +160,71 @@ button.big {
   gap: 14px;
   background: rgba(20, 24, 48, 0.6);
 }
+
+#crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: #fff4dc;
+  opacity: 0.8;
+}
+
+#prompt {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 28px);
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  font-weight: 800;
+  font-size: 18px;
+  color: #2a1608;
+  background: #f2a33a;
+  border: 3px solid #3b2516;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+#prompt.denied {
+  color: #fff4dc;
+  background: #6b4a4a;
+}
+
+#progress {
+  position: absolute;
+  left: 50%;
+  top: calc(50% + 74px);
+  transform: translateX(-50%);
+  width: 220px;
+  height: 14px;
+  padding: 3px;
+  background: rgba(20, 24, 48, 0.75);
+  border: 3px solid #3b2516;
+  border-radius: 10px;
+}
+
+#progressFill {
+  height: 100%;
+  width: 0;
+  border-radius: 6px;
+  background: #f2a33a;
+}
+
+#status {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  padding: 10px 14px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: right;
+  background: rgba(20, 24, 48, 0.55);
+  border-radius: 10px;
+}
+
+#hud {
+  line-height: 1.5;
+}

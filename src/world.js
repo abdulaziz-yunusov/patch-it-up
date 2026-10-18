@@ -2,6 +2,7 @@
 // Replace with Blender .glb models later (public/models/).
 
 import * as THREE from 'three';
+import { RULES } from './state.js';
 
 export const SHIP = {
   length: 24, // x: -12 .. 12
@@ -21,6 +22,20 @@ export const ROOMS = [
 ];
 
 const WINDOW = { width: 3, bottom: 1.1, top: 2.4 };
+
+// Power tubes: 0 units is a stub, maxPerTube fills the tube.
+const TUBE = { min: 0.4, max: 2, size: 0.4, z: -2.4, xs: [-1.2, 0, 1.2] };
+
+// Where the pilot stands when they take the wheel: one stride behind it.
+export const HELM_STANCE = { x: 8.9, z: 0, look: -Math.PI / 2 };
+
+// Where the hull springs a leak. Step 7 opens these during a flight;
+// for now all three are open so there is always something to patch.
+export const BREACH_SPOTS = [
+  { id: 'b0', x: -8.5, z: 1.9 },
+  { id: 'b1', x: 0.8, z: 1.9 },
+  { id: 'b2', x: 7.4, z: -1.9 },
+];
 
 export function addSky(scene) {
   scene.background = new THREE.Color('#353a68');
@@ -113,7 +128,8 @@ export function buildShip() {
     }
   }
 
-  buildStations(ship, colliders, solid, box, metal);
+  const stations = buildStations(ship, colliders, solid, box, metal);
+  const breaches = buildBreaches(ship, part, box);
 
   // The gas bag overhead: decoration, never walked into.
   const balloon = part(
@@ -125,29 +141,100 @@ export function buildShip() {
   );
   balloon.scale.set(14, 4, 5);
 
-  return { ship, colliders };
+  return { ship, colliders, breaches, ...stations };
+}
+
+// Draw the ship the way the state says it is: tube heights, patched
+// breaches, the angle of the wheel.
+export function applyState(world, state) {
+  world.tubes.forEach((tube, i) => {
+    const height = TUBE.min + (state.power[i] / RULES.maxPerTube) * (TUBE.max - TUBE.min);
+    tube.scale.y = height;
+    tube.position.y = height / 2;
+  });
+  for (const [id, mesh] of Object.entries(world.breaches)) mesh.visible = !state.breaches[id];
+  world.wheelDisc.rotation.y = state.steering * 2.2;
+  world.wheelMount.userData.interact.label = state.atWheel ? 'Leave the wheel' : 'Take the wheel';
+}
+
+function buildBreaches(ship, part, box) {
+  const torn = new THREE.MeshStandardMaterial({ color: '#241a12', flatShading: true });
+  const breaches = {};
+  for (const spot of BREACH_SPOTS) {
+    const mesh = part(box(1, 0.08, 1), torn, spot.x, 0.04, spot.z);
+    mesh.name = spot.id;
+    mesh.userData.interact = {
+      label: 'Patch',
+      role: 'mechanic',
+      action: 'patch',
+      hold: RULES.patchSeconds,
+      id: spot.id,
+    };
+    breaches[spot.id] = mesh;
+  }
+  return breaches;
 }
 
 function buildStations(ship, colliders, solid, box, metal) {
   const orange = new THREE.MeshStandardMaterial({ color: '#e08a2e', flatShading: true });
   const brass = new THREE.MeshStandardMaterial({ color: '#b9892f', flatShading: true });
 
-  // Engine room: the engine block and the little furnace beside it.
+  // Engine room: the engine block, the furnace, and the mechanic's kit.
   solid(box(2.2, 1.8, 2), metal, -8, 0.9, -1.8).name = 'engine';
   solid(box(0.7, 0.7, 0.7), orange, -6.2, 0.35, -2.2).name = 'furnace';
 
-  // Power room: three tubes the engineer will move power between (step 4).
-  const tubeHeights = [1.2, 1.8, 0.9];
-  tubeHeights.forEach((height, i) => {
-    solid(box(0.4, height, 0.4), metal, -1.2 + i * 1.2, height / 2, -2.4).name = `tube${i}`;
+  const kit = new THREE.Mesh(box(0.36, 0.3, 0.26), orange);
+  kit.position.set(-6.6, 0.15, 1.6);
+  kit.name = 'patchKit';
+  kit.userData.interact = { label: 'Pick up patch kit', role: 'mechanic', action: 'pickup' };
+  ship.add(kit);
+
+  // Power room: three tubes and the lever that feeds each one.
+  const tubes = [];
+  const levers = [];
+  TUBE.xs.forEach((x, i) => {
+    // Unit-height geometry, scaled by applyState as power moves.
+    const tube = new THREE.Mesh(box(TUBE.size, 1, TUBE.size), metal);
+    tube.name = `tube${i}`;
+    tube.position.set(x, 0.5, TUBE.z);
+    ship.add(tube);
+    tubes.push(tube);
+
+    // The collider covers a full tube, so it does not change as power moves.
+    colliders.push(
+      new THREE.Box3().setFromCenterAndSize(
+        new THREE.Vector3(x, TUBE.max / 2, TUBE.z),
+        new THREE.Vector3(TUBE.size, TUBE.max, TUBE.size)
+      )
+    );
+
+    const lever = new THREE.Mesh(box(0.22, 0.22, 0.22), brass);
+    lever.position.set(x, 1.05, TUBE.z + 0.31);
+    lever.name = `lever${i}`;
+    lever.userData.interact = { label: 'Power up', role: 'engineer', action: 'power', index: i };
+    ship.add(lever);
+    levers.push(lever);
   });
 
-  // Helm: the wheel, standing upright in front of the window.
-  const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 0.14, 16), brass);
-  wheel.rotation.z = Math.PI / 2;
-  wheel.position.set(10.4, 1.3, 0);
-  wheel.name = 'wheel';
-  ship.add(wheel);
-  wheel.updateMatrixWorld(true);
-  colliders.push(new THREE.Box3().setFromObject(wheel));
+  // Helm: the wheel on its mount, spokes so you can see it turn.
+  const wheelMount = new THREE.Group();
+  // At 1.35 m the wheel meets a level crosshair, and a 0.4 m disc still
+  // leaves most of the window visible around it.
+  wheelMount.position.set(10.4, 1.35, 0);
+  wheelMount.rotation.z = Math.PI / 2; // tip the disc upright, facing the bow
+  wheelMount.name = 'wheel';
+  wheelMount.userData.interact = { label: 'Take the wheel', role: 'pilot', action: 'wheel' };
+
+  const wheelDisc = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.12, 16), brass);
+  for (let i = 0; i < 3; i++) {
+    const spoke = new THREE.Mesh(box(1, 0.09, 0.09), brass);
+    spoke.rotation.y = (i * Math.PI) / 3;
+    wheelDisc.add(spoke);
+  }
+  wheelMount.add(wheelDisc);
+  ship.add(wheelMount);
+  wheelMount.updateMatrixWorld(true);
+  colliders.push(new THREE.Box3().setFromObject(wheelMount));
+
+  return { tubes, levers, wheelMount, wheelDisc, kit };
 }

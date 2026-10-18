@@ -22,12 +22,12 @@ export const ROLE_COLORS = {
 // A sphere with two eyes, so the others can tell which way you face.
 export function createPlayerMesh(color = ROLE_COLORS.crew) {
   const body = new THREE.Group();
-  body.add(
-    new THREE.Mesh(
-      new THREE.SphereGeometry(PLAYER.radius, 20, 14),
-      new THREE.MeshStandardMaterial({ color, flatShading: true })
-    )
+  const sphere = new THREE.Mesh(
+    new THREE.SphereGeometry(PLAYER.radius, 20, 14),
+    new THREE.MeshStandardMaterial({ color, flatShading: true })
   );
+  body.userData.sphere = sphere; // so the role colour can change later
+  body.add(sphere);
 
   const white = new THREE.MeshStandardMaterial({ color: '#fff4dc', flatShading: true });
   for (const side of [-1, 1]) {
@@ -49,6 +49,8 @@ export class LocalPlayer {
     this.mesh.visible = false; // your own sphere stays out of your way
     ship.add(this.mesh);
 
+    this.role = role;
+    this.atWheel = false; // at the wheel A and D steer instead of walking
     this.position = new THREE.Vector3(0, PLAYER.radius, 0);
     this.velocityY = 0;
     this.onGround = true;
@@ -87,6 +89,11 @@ export class LocalPlayer {
     scene.add(this.camera);
   }
 
+  setRole(role) {
+    this.role = role;
+    this.mesh.userData.sphere.material.color.set(ROLE_COLORS[role] ?? ROLE_COLORS.crew);
+  }
+
   update(dt) {
     if (!this.controls.isLocked) return;
     const { keys } = this;
@@ -97,11 +104,14 @@ export class LocalPlayer {
     this._forward.normalize();
     this._right.crossVectors(this._forward, this.camera.up).normalize();
 
+    // At the wheel your feet stay planted: A and D steer instead (game.js).
     this._move.set(0, 0, 0);
-    if (keys.KeyW) this._move.add(this._forward);
-    if (keys.KeyS) this._move.sub(this._forward);
-    if (keys.KeyD) this._move.add(this._right);
-    if (keys.KeyA) this._move.sub(this._right);
+    if (!this.atWheel) {
+      if (keys.KeyW) this._move.add(this._forward);
+      if (keys.KeyS) this._move.sub(this._forward);
+      if (keys.KeyD) this._move.add(this._right);
+      if (keys.KeyA) this._move.sub(this._right);
+    }
     if (this._move.lengthSq() > 0) {
       this._move.normalize().multiplyScalar(PLAYER.speed * dt);
       // X and Z separately, so a wall you graze lets you slide along it.
@@ -109,7 +119,7 @@ export class LocalPlayer {
       this.tryMove(0, 0, this._move.z);
     }
 
-    if (keys.Space && this.onGround) {
+    if (keys.Space && this.onGround && !this.atWheel) {
       this.velocityY = PLAYER.jumpSpeed;
       this.onGround = false;
     }
