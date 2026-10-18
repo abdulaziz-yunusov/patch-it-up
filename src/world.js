@@ -146,7 +146,7 @@ export function buildShip() {
 
 // Draw the ship the way the state says it is: tube heights, patched
 // breaches, the angle of the wheel.
-export function applyState(world, state) {
+export function applyState(world, state, localAtWheel = false) {
   world.tubes.forEach((tube, i) => {
     const height = TUBE.min + (state.power[i] / RULES.maxPerTube) * (TUBE.max - TUBE.min);
     tube.scale.y = height;
@@ -154,7 +154,7 @@ export function applyState(world, state) {
   });
   for (const [id, mesh] of Object.entries(world.breaches)) mesh.visible = !state.breaches[id];
   world.wheelDisc.rotation.y = state.steering * 2.2;
-  world.wheelMount.userData.interact.label = state.atWheel ? 'Leave the wheel' : 'Take the wheel';
+  world.wheelMount.userData.interact.label = localAtWheel ? 'Leave the wheel' : 'Take the wheel';
 }
 
 function buildBreaches(ship, part, box) {

@@ -1,20 +1,76 @@
 // One plain object with everything the game knows.
-// The host changes it, sends it to everyone (step 5), and every browser
-// draws the 3D scene from it.
+// The host owns it, changes it, and sends it to everyone; every browser
+// draws the 3D scene from the copy it last received.
+
+import { PLAYER } from './player.js';
 
 export const RULES = {
-  maxPerTube: 4, // step 7: 6 units shared across three tubes
+  maxPerTube: 4,
   patchSeconds: 2.5,
-  steerRate: 0.9, // wheel units per second
+  steerRate: 0.9,
   reach: 2.5, // metres you can interact from
+  maxPlayers: 3,
+  inputHz: 30, // joiner -> host
+  stateHz: 20, // host -> all
+  timeoutMs: 5000, // silence this long means that browser is gone
+  correction: 0.25, // how hard your own sphere is pulled to the host's answer
 };
+
+export const ROLES = ['mechanic', 'engineer', 'pilot'];
+export const SPAWNS = [
+  { x: -10, z: 0 },
+  { x: -10, z: 1.4 },
+  { x: -10, z: -1.4 },
+];
+export const KIT_HOME = { x: -6.6, y: 0.15, z: 1.6 };
 
 export const state = {
-  power: [2, 2, 2], // units in the engine, shield and lift tubes
-  breaches: { b0: false, b1: false, b2: false }, // id -> patched?
+  players: {}, // id -> { id, name, role, x, y, z, yaw, atWheel }
+  power: [2, 2, 2],
+  breaches: { b0: false, b1: false, b2: false },
   steering: 0, // -1 (hard to port) .. 1 (hard to starboard)
-
-  // Step 5 turns this into one entry per player; for now it is just you.
-  role: 'mechanic',
-  atWheel: false,
+  kit: { heldBy: null, ...KIT_HOME },
 };
+
+// Who this browser is. Never sent anywhere.
+export const local = { id: null, name: 'Deckhand', isHost: false, code: '' };
+
+export function newPlayer(id, name, index) {
+  const spawn = SPAWNS[index % SPAWNS.length];
+  return {
+    id,
+    name,
+    role: ROLES[index % ROLES.length],
+    x: spawn.x,
+    y: PLAYER.radius,
+    z: spawn.z,
+    yaw: -Math.PI / 2, // facing the bow
+    atWheel: false,
+  };
+}
+
+export function snapshot() {
+  return {
+    players: state.players,
+    power: state.power,
+    breaches: state.breaches,
+    steering: state.steering,
+    kit: state.kit,
+  };
+}
+
+export function applySnapshot(s) {
+  state.players = s.players ?? {};
+  state.power = s.power ?? state.power;
+  state.breaches = s.breaches ?? state.breaches;
+  state.steering = s.steering ?? 0;
+  state.kit = s.kit ?? state.kit;
+}
+
+export function roleTaken(role, exceptId) {
+  return Object.values(state.players).some((p) => p.role === role && p.id !== exceptId);
+}
+
+export function playerCount() {
+  return Object.keys(state.players).length;
+}

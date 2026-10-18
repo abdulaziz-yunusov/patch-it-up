@@ -1,14 +1,24 @@
-// The game rules. Step 5 runs these on the host only; for now they are
-// the placeholder actions of step 4, working on the shared state.
+// The game rules. Only the host runs these: everyone else sends inputs
+// and draws the state that comes back.
 
-import { RULES, state } from './state.js';
+import { KIT_HOME, ROLES, RULES, roleTaken, state } from './state.js';
+import { lookDirection } from './player.js';
+import { HELM_STANCE } from './world.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
-// Who may touch what: the label an interactive mesh carries names a role.
-export function mayUse(interact, role = state.role) {
+// Who may touch what: an interactive mesh names the role it belongs to.
+export function mayUse(interact, role) {
   return !interact.role || interact.role === role;
 }
+
+// What each action name does, run by the host on behalf of one player.
+export const ACTIONS = {
+  patch: (interact) => patchBreach(interact.id),
+  power: (interact) => movePower(interact.index),
+  wheel: (interact, player, body) => toggleWheel(player, body),
+  pickup: (interact, player) => pickUpKit(player),
+};
 
 export function patchBreach(id) {
   if (state.breaches[id]) return false;
@@ -29,13 +39,54 @@ export function movePower(index) {
   return true;
 }
 
-export function toggleWheel() {
-  state.atWheel = !state.atWheel;
-  return state.atWheel;
+// One pair of hands on the wheel at a time.
+export function toggleWheel(player, body) {
+  if (player.atWheel) {
+    player.atWheel = false;
+    body.atWheel = false;
+    return true;
+  }
+  if (Object.values(state.players).some((p) => p.atWheel)) return false;
+  player.atWheel = true;
+  body.atWheel = true;
+  body.position.set(HELM_STANCE.x, body.position.y, HELM_STANCE.z);
+  return true;
 }
 
 // While you hold the wheel, A and D steer instead of walking.
-export function steer(dt, keys) {
+export function steerShip(dt, keys) {
   if (keys.KeyA) state.steering = clamp(state.steering - RULES.steerRate * dt, -1, 1);
   if (keys.KeyD) state.steering = clamp(state.steering + RULES.steerRate * dt, -1, 1);
+}
+
+export function pickUpKit(player) {
+  if (state.kit.heldBy) return false;
+  state.kit.heldBy = player.id;
+  return true;
+}
+
+export function dropKit(player, body, yaw) {
+  if (state.kit.heldBy !== player.id) return false;
+  const ahead = lookDirection(yaw, 0);
+  state.kit.heldBy = null;
+  state.kit.x = body.position.x + ahead.x * 0.8;
+  state.kit.y = KIT_HOME.y;
+  state.kit.z = body.position.z + ahead.z * 0.8;
+  return true;
+}
+
+export function requestRole(player, index) {
+  const role = ROLES[index];
+  if (!role || roleTaken(role, player.id)) return false;
+  player.role = role;
+  return true;
+}
+
+// Someone's browser closed: free what they were holding.
+export function removePlayer(id, body) {
+  const player = state.players[id];
+  if (!player) return;
+  if (state.kit.heldBy === id && body) dropKit(player, body, player.yaw);
+  else if (state.kit.heldBy === id) state.kit.heldBy = null;
+  delete state.players[id];
 }

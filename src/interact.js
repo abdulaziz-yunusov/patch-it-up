@@ -1,136 +1,68 @@
 // Finds what you are looking at, shows "E - Patch" under the crosshair,
-// and runs the action. One system for every station: lockers, levers,
-// the wheel, breaches.
+// and - on the host - runs the action for whichever player asked for it.
+// One system for every station: lockers, levers, the wheel, breaches.
 
 import * as THREE from 'three';
 import { RULES } from './state.js';
+import { PLAYER, lookDirection } from './player.js';
 
 const CENTRE = new THREE.Vector2(0, 0);
 const DOT = '·';
 
-export class Interactor {
-  // handlers: { patch, power, wheel, pickup } - what each action name does.
-  constructor({ camera, ship, player, handlers, mayUse }) {
-    this.camera = camera;
-    this.ship = ship;
-    this.player = player;
-    this.handlers = handlers;
-    this.mayUse = mayUse;
+// The nearest thing along the ray that carries userData.interact.
+function firstInteractive(ship, raycaster) {
+  for (const hit of raycaster.intersectObjects(ship.children, true)) {
+    for (let node = hit.object; node && node !== ship; node = node.parent) {
+      if (node.userData.interact) return node;
+    }
+  }
+  return null;
+}
 
+// What this browser shows you: the prompt and the hold bar. The action
+// itself belongs to the host, so nothing here changes the game.
+export class InteractionView {
+  constructor({ ship, camera, player, roleOf, mayUse }) {
+    this.ship = ship;
+    this.camera = camera;
+    this.player = player;
+    this.roleOf = roleOf;
+    this.mayUse = mayUse;
     this.raycaster = new THREE.Raycaster();
     this.raycaster.far = RULES.reach;
-    this.target = null; // the mesh under the crosshair
-    this.held = 0; // seconds E has been held on this target
-    this.pressed = false;
-    this.tapped = false; // a tap shorter than one frame must still count
-    this.carried = null;
+    this.target = null;
+    this.held = 0;
 
     this.prompt = document.getElementById('prompt');
     this.progress = document.getElementById('progress');
     this.progressFill = document.getElementById('progressFill');
-
-    // E comes from the events, not a per-frame poll: a quick tap can begin
-    // and end between two frames and would otherwise be missed.
-    addEventListener('keydown', (e) => {
-      if (e.code !== 'KeyE' || e.repeat) return;
-      this.pressed = true;
-      this.tapped = true;
-    });
-    addEventListener('keyup', (e) => {
-      if (e.code === 'KeyE') this.pressed = false;
-    });
-    player.controls.addEventListener('unlock', () => {
-      this.pressed = false;
-      this.tapped = false;
-    });
-
-    // Right click drops what you carry; the browser menu would eat it.
-    addEventListener('contextmenu', (e) => e.preventDefault());
-    addEventListener('mousedown', (e) => {
-      if (e.button === 2) this.drop();
-    });
   }
 
   update(dt) {
     const locked = this.player.controls.isLocked;
-    const holding = this.pressed && locked;
-    const tapped = this.tapped && locked;
-    this.tapped = false;
-
-    const target = locked ? this.findTarget() : null;
+    let target = null;
+    if (locked) {
+      this.raycaster.setFromCamera(CENTRE, this.camera);
+      this.raycaster.far = RULES.reach;
+      target = firstInteractive(this.ship, this.raycaster);
+    }
     if (target !== this.target) {
       this.target = target;
       this.held = 0;
     }
 
     const interact = target?.userData.interact ?? null;
-    const allowed = interact ? this.mayUse(interact) : false;
+    const allowed = interact ? this.mayUse(interact, this.roleOf()) : false;
     this.showPrompt(interact, allowed);
 
-    if (interact && allowed) {
-      if (interact.hold) this.holdAction(interact, target, holding, dt);
-      else if (tapped) this.run(interact, target);
+    // The bar is a mirror of the host's timer, not the timer itself.
+    if (interact?.hold && allowed && this.player.keys.KeyE && locked) {
+      this.held = Math.min(interact.hold, this.held + dt);
+      this.showProgress(this.held / interact.hold);
     } else {
       this.held = 0;
       this.showProgress(0);
     }
-  }
-
-  // A ray straight out of the middle of the screen, 2.5 m long.
-  findTarget() {
-    this.raycaster.setFromCamera(CENTRE, this.camera);
-    for (const hit of this.raycaster.intersectObjects(this.ship.children, true)) {
-      for (let node = hit.object; node; node = node.parent) {
-        if (node.userData.interact) return node;
-        if (node === this.ship) break;
-      }
-    }
-    return null;
-  }
-
-  holdAction(interact, target, pressed, dt) {
-    if (!pressed) {
-      this.held = 0;
-      this.showProgress(0);
-      return;
-    }
-    this.held += dt;
-    this.showProgress(Math.min(1, this.held / interact.hold));
-    if (this.held >= interact.hold) {
-      this.held = 0;
-      this.showProgress(0);
-      this.run(interact, target);
-    }
-  }
-
-  run(interact, target) {
-    const handler = this.handlers[interact.action];
-    if (handler) handler(interact, target, this);
-  }
-
-  // Carrying: one item at a time, stuck in front of the camera.
-  pickUp(mesh) {
-    if (this.carried) return false;
-    this.carried = mesh;
-    mesh.userData.homeY = mesh.position.y;
-    this.camera.add(mesh);
-    mesh.position.set(0.48, -0.4, -1);
-    mesh.rotation.set(0, 0.5, 0);
-    return true;
-  }
-
-  drop() {
-    const mesh = this.carried;
-    if (!mesh) return false;
-    this.carried = null;
-    this.ship.add(mesh);
-    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion);
-    forward.y = 0;
-    forward.normalize().multiplyScalar(0.8);
-    mesh.position.copy(this.player.position).add(forward);
-    mesh.position.y = mesh.userData.homeY ?? 0.2;
-    mesh.rotation.set(0, 0, 0);
-    return true;
   }
 
   showPrompt(interact, allowed) {
@@ -147,5 +79,67 @@ export class Interactor {
   showProgress(fraction) {
     this.progress.hidden = fraction <= 0;
     this.progressFill.style.width = `${Math.round(fraction * 100)}%`;
+  }
+}
+
+// The host's copy: one ray per player, from where that player stands and
+// along the direction their last input said they were looking.
+export class HostInteractions {
+  constructor(ship) {
+    this.ship = ship;
+    this.raycaster = new THREE.Raycaster();
+    this.holds = new Map(); // player id -> { target, time }
+    this._origin = new THREE.Vector3();
+    this._dir = new THREE.Vector3();
+    this._quaternion = new THREE.Quaternion();
+  }
+
+  update(dt, players, bodies, inputs, { mayUse, run }) {
+    for (const player of Object.values(players)) {
+      const body = bodies.get(player.id);
+      const input = inputs.get(player.id);
+      if (!body || !input) continue;
+
+      const target = this.lookFrom(body, input);
+      const interact = target?.userData.interact ?? null;
+      if (!interact || !mayUse(interact, player.role)) {
+        this.holds.delete(player.id);
+        input.useTap = false;
+        continue;
+      }
+
+      if (interact.hold) {
+        if (!input.use) {
+          this.holds.delete(player.id);
+        } else {
+          const previous = this.holds.get(player.id);
+          const time = (previous?.target === target ? previous.time : 0) + dt;
+          if (time >= interact.hold) {
+            this.holds.delete(player.id);
+            run(interact, player, body);
+          } else {
+            this.holds.set(player.id, { target, time });
+          }
+        }
+      } else if (input.useTap) {
+        run(interact, player, body);
+      }
+      input.useTap = false; // one tap, one action
+    }
+  }
+
+  lookFrom(body, input) {
+    this._origin.set(
+      body.position.x,
+      body.position.y + PLAYER.eyeHeight - PLAYER.radius,
+      body.position.z
+    );
+    this.ship.localToWorld(this._origin);
+    lookDirection(input.yaw ?? 0, input.pitch ?? 0, this._dir)
+      .applyQuaternion(this.ship.getWorldQuaternion(this._quaternion))
+      .normalize();
+    this.raycaster.set(this._origin, this._dir);
+    this.raycaster.far = RULES.reach;
+    return firstInteractive(this.ship, this.raycaster);
   }
 }

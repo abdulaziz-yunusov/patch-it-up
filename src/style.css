@@ -217,6 +217,7 @@ button.big {
   position: absolute;
   right: 16px;
   top: 16px;
+  white-space: pre-line;
   padding: 10px 14px;
   font-weight: 700;
   line-height: 1.5;
