@@ -88,9 +88,9 @@ export function updatePower(world, state, { now, dt }) {
   if (!room) return;
   const engines = state.power[0] / RULES.maxPerTube;
 
-  // At the dock the dynamo idles; in flight it runs with the engines.
+  // At the dock the dynamo idles; once cast off it runs with the engines.
   if (room.flywheel) {
-    const speed = state.phase === 'flight' ? 1 + engines * 9 : 0.8;
+    const speed = state.phase !== 'lobby' ? 1 + engines * 9 : 0.8;
     room.flywheel.rotation.x += speed * dt;
   }
   if (room.telegraph) {

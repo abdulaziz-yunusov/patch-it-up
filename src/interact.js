@@ -1,10 +1,11 @@
-// Finds what you are looking at, shows "E - Patch" under the crosshair,
+// Finds what you are looking at, shows "E · Patch" under the crosshair,
 // and - on the host - runs the action for whichever player asked for it.
 // One system for every station: lockers, levers, the wheel, breaches.
 
 import * as THREE from 'three';
 import { RULES } from './state.js';
 import { PLAYER, lookDirection } from './player.js';
+import { keyLabel, settings } from './settings.js';
 
 const CENTRE = new THREE.Vector2(0, 0);
 const DOT = '·';
@@ -56,7 +57,7 @@ export class InteractionView {
     this.showPrompt(interact, allowed);
 
     // The bar is a mirror of the host's timer, not the timer itself.
-    if (interact?.hold && allowed && this.player.keys.KeyE && locked) {
+    if (interact?.hold && allowed && this.player.isDown('interact') && locked) {
       this.held = Math.min(interact.hold, this.held + dt);
       this.showProgress(this.held / interact.hold);
     } else {
@@ -73,7 +74,8 @@ export class InteractionView {
     const role = interact.role ? interact.role[0].toUpperCase() + interact.role.slice(1) : '';
     this.prompt.hidden = false;
     this.prompt.classList.toggle('denied', !allowed);
-    this.prompt.textContent = allowed ? `E ${DOT} ${interact.label}` : `${role} only`;
+    const key = keyLabel(settings.keys.interact);
+    this.prompt.textContent = allowed ? `${key} ${DOT} ${interact.label}` : `${role} only`;
   }
 
   showProgress(fraction) {

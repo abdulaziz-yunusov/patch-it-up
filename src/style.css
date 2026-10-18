@@ -1,5 +1,20 @@
 /* One stylesheet for the HTML screens. The 3D canvas sits behind them all. */
 
+/* Bundled, not fetched: a desktop build may have no internet. */
+@font-face {
+  font-family: 'Lilita One';
+  src: url('/fonts/lilita-one-latin.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Nunito';
+  src: url('/fonts/nunito-latin.woff2') format('woff2');
+  font-weight: 200 1000;
+  font-display: swap;
+}
+
 html,
 body {
   margin: 0;
@@ -29,15 +44,6 @@ canvas {
   align-items: center;
   justify-content: center;
   background: rgba(20, 24, 48, 0.45);
-}
-
-/* On a wide screen the menu sits to one side, so the ship stays in view. */
-@media (min-width: 900px) {
-  #menu.panel-screen,
-  #join.panel-screen {
-    justify-content: flex-start;
-    padding-left: 9vw;
-  }
 }
 
 .panel {
@@ -159,6 +165,7 @@ button.big {
   font-weight: 700;
   line-height: 1.5;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+  font-size: calc(16px * var(--hud-scale, 1));
 }
 
 #lobby,
@@ -172,13 +179,38 @@ button.big {
   top: 104px; /* clear of the status panel on a narrow window */
   transform: translateX(-50%);
   padding: 12px 22px;
-  font-size: 22px;
+  font-size: calc(22px * var(--hud-scale, 1));
   font-weight: 800;
   text-align: center;
   background: rgba(20, 24, 48, 0.7);
   border: 3px solid #3b2516;
   border-radius: 12px;
   white-space: nowrap;
+}
+
+/* The climb: a card in the middle while the dock falls away. */
+#takeoffCard {
+  position: absolute;
+  left: 50%;
+  top: 22%;
+  transform: translateX(-50%);
+  width: min(86vw, 460px);
+  padding: 16px 22px;
+  text-align: center;
+  background: rgba(20, 24, 48, 0.7);
+  border: 3px solid #3b2516;
+  border-radius: 12px;
+}
+
+#takeoffTitle {
+  font-size: calc(30px * var(--hud-scale, 1));
+  font-weight: 800;
+}
+
+#takeoffJob {
+  margin-top: 8px;
+  font-size: calc(16px * var(--hud-scale, 1));
+  line-height: 1.4;
 }
 
 #banner:empty {
@@ -215,7 +247,7 @@ button.big {
   transform: translateX(-50%);
   padding: 8px 16px;
   font-weight: 800;
-  font-size: 18px;
+  font-size: calc(18px * var(--hud-scale, 1));
   color: #2a1608;
   background: #f2a33a;
   border: 3px solid #3b2516;
@@ -260,6 +292,7 @@ button.big {
   text-align: right;
   background: rgba(20, 24, 48, 0.55);
   border-radius: 10px;
+  font-size: calc(16px * var(--hud-scale, 1));
 }
 
 
@@ -275,7 +308,7 @@ button.big {
 }
 
 #timer {
-  font-size: 30px;
+  font-size: calc(30px * var(--hud-scale, 1));
   font-weight: 800;
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
 }
@@ -305,6 +338,36 @@ button.big {
   margin-top: 4px;
   font-weight: 700;
   text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+  font-size: calc(16px * var(--hud-scale, 1));
+}
+
+/* The furnace: thinner than altitude, since it is the cause, not the score. */
+#furnaceBar {
+  height: 10px;
+  margin: 8px auto 0;
+  width: 70%;
+  padding: 2px;
+  background: rgba(20, 24, 48, 0.75);
+  border: 2px solid #3b2516;
+  border-radius: 8px;
+}
+
+#furnaceFill {
+  height: 100%;
+  width: 75%;
+  border-radius: 5px;
+  background: #f29a3a;
+}
+
+#furnaceFill.low {
+  background: #8a4a2a;
+}
+
+#furnaceText {
+  margin-top: 2px;
+  font-size: calc(13px * var(--hud-scale, 1));
+  font-weight: 700;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
 }
 
 /* A red wash when the hull tears open. */
@@ -323,7 +386,7 @@ button.big {
   transform: translateX(-50%);
   max-width: 80vw;
   padding: 10px 18px;
-  font-size: 18px;
+  font-size: calc(18px * var(--hud-scale, 1));
   font-weight: 800;
   text-align: center;
   color: #2a1608;
@@ -331,4 +394,1440 @@ button.big {
   border: 3px solid #3b2516;
   border-radius: 12px;
   box-shadow: 0 4px 0 #3b2516;
+}
+
+/* --- The start view ---------------------------------------------------
+   A stormy sky drawn in SVG fills the screen; the 3D ship orbits unseen
+   behind it until you board. Sizes follow the 1440 x 810 design and
+   shrink with the window. */
+
+#menu {
+  overflow: hidden;
+  background: #222846;
+  font-family: 'Nunito', 'Trebuchet MS', sans-serif;
+  font-weight: 600;
+  color: #fff4dc;
+}
+
+.menu-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* The ship rides the wind, and lightning flickers now and then. */
+.menu-ship {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: menu-bob 6s ease-in-out infinite;
+}
+
+.menu-bolt {
+  animation: menu-flash 7s linear infinite;
+}
+
+@keyframes menu-bob {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate(0, 10px) rotate(-0.6deg);
+  }
+}
+
+@keyframes menu-flash {
+  0%,
+  84%,
+  89%,
+  100% {
+    opacity: 1;
+  }
+  86% {
+    opacity: 0.15;
+  }
+  87.5% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu-ship,
+  .menu-bolt {
+    animation: none;
+  }
+}
+
+.menu-main {
+  position: absolute;
+  left: clamp(20px, 7.8vw, 112px);
+  top: clamp(24px, 11.4vh, 92px);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(20px, 5vh, 40px);
+  width: min(520px, calc(100vw - 40px));
+}
+
+.menu-title {
+  margin: 0;
+  font-family: 'Lilita One', 'Arial Black', sans-serif;
+  font-weight: 400;
+  font-size: clamp(64px, min(7.8vw, 13.8vh), 112px);
+  line-height: 0.95;
+  letter-spacing: 1px;
+  color: #f2a33a;
+  text-shadow: 0 6px 0 #3b2516;
+}
+
+.menu-tagline {
+  margin: 6px 0 0;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+/* Errors and "coming soon": beside the Host button, where the player is
+   already looking, without pushing the buttons down. */
+.menu-note {
+  position: absolute;
+  left: calc(100% + 24px);
+  top: 12px;
+  margin: 0;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 100% - 64px));
+  padding: 8px 14px;
+  font-weight: 800;
+  color: #ffd58a;
+  background: #1b2039;
+  border: 2px solid #4a5587;
+  border-radius: 10px;
+}
+
+.menu-buttons {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(12px, 2.2vh, 18px);
+  width: min(360px, 100%);
+}
+
+.menu-btn {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: clamp(56px, 8.9vh, 72px);
+  padding: 0 28px;
+  box-sizing: border-box;
+  font-family: 'Lilita One', 'Arial Black', sans-serif;
+  font-weight: 400;
+  font-size: clamp(24px, 3.7vh, 30px);
+  color: #fff4dc;
+  background: #8a5a36;
+  border: 4px solid #3b2516;
+  border-radius: 14px;
+  box-shadow: 0 7px 0 #3b2516;
+  transition:
+    transform 80ms ease-out,
+    box-shadow 80ms ease-out,
+    background-color 120ms;
+}
+
+.menu-btn.primary {
+  height: clamp(60px, 9.4vh, 76px);
+  font-size: clamp(26px, 4vh, 32px);
+  color: #2a1608;
+  background: #f2a33a;
+}
+
+.menu-btn svg {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.menu-btn:hover {
+  filter: none; /* its own hover colour, not the global brightening */
+  background: #9c6a42;
+}
+
+.menu-btn.primary:hover {
+  background: #f7b356;
+}
+
+/* Pressed: the button sinks onto its shadow. */
+.menu-btn:active {
+  transform: translateY(5px);
+  box-shadow: 0 2px 0 #3b2516;
+}
+
+.menu-btn:focus-visible,
+.name-chip:focus-visible {
+  outline: 3px solid #ffd84d;
+  outline-offset: 3px;
+}
+
+.menu-footer {
+  position: absolute;
+  left: clamp(20px, 7.8vw, 112px);
+  bottom: 36px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  align-items: center;
+  font-size: 16px;
+  color: #c9cff0;
+}
+
+.name-chip,
+.name-edit {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font: inherit;
+  font-weight: 800;
+  color: #fff4dc;
+  background: #1b2039;
+  border: 2px solid #4a5587;
+  border-radius: 10px;
+}
+
+.name-chip:hover {
+  filter: none;
+  border-color: #7f8bc4;
+}
+
+.name-chip svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: #ffd58a;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.name-shown {
+  color: #ffd58a;
+}
+
+.name-edit input {
+  width: 9em;
+  padding: 0;
+  font: inherit;
+  color: #ffd58a;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid #ffd58a;
+  outline: none;
+}
+
+.menu-roles {
+  position: absolute;
+  right: 48px;
+  bottom: 36px;
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  padding: 10px 16px;
+  font-size: 16px;
+  font-weight: 800;
+  background: #1b2039;
+  border: 2px solid #4a5587;
+  border-radius: 12px;
+}
+
+.menu-roles span {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.menu-roles i {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+}
+
+/* Narrow windows: the ship fades back behind the buttons, and the role
+   key makes way for the footer. */
+@media (max-width: 900px) {
+  .menu-art .menu-ship {
+    opacity: 0.3;
+  }
+
+  .menu-roles {
+    display: none;
+  }
+}
+
+@media (max-height: 560px) {
+  .menu-footer {
+    bottom: 12px;
+  }
+}
+
+/* --- The crew screen ---------------------------------------------------
+   Between the menu and the dock: the room code and who has joined.
+   Two columns from the 1440 x 810 design; one column on narrow windows. */
+
+/* The join screen is built from the same parts. */
+#gathering,
+#join {
+  overflow-y: auto;
+  background: #222846;
+  font-family: 'Nunito', 'Trebuchet MS', sans-serif;
+  font-weight: 600;
+  color: #fff4dc;
+}
+
+.sky-art {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.gather {
+  position: relative;
+  max-width: 1216px;
+  margin: 0 auto;
+  padding: clamp(20px, 7.9vh, 64px) clamp(20px, 7.8vw, 112px) 40px;
+}
+
+.gather-head {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: clamp(20px, 5vh, 44px);
+}
+
+.gather-title {
+  margin: 0;
+  font-family: 'Lilita One', 'Arial Black', sans-serif;
+  font-weight: 400;
+  font-size: clamp(38px, 6.9vh, 56px);
+  line-height: 1.1;
+  color: #f2a33a;
+  text-shadow: 0 5px 0 #3b2516;
+}
+
+/* The square brown button with a chevron: back to the menu. */
+.icon-btn {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  background: #8a5a36;
+  border: 4px solid #3b2516;
+  border-radius: 12px;
+  box-shadow: 0 5px 0 #3b2516;
+}
+
+.icon-btn svg,
+.small-btn svg,
+.go-btn svg,
+.voice-row svg,
+.crew-row svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.icon-btn svg {
+  width: 26px;
+  height: 26px;
+  stroke-width: 2.6;
+}
+
+.icon-btn:active,
+.small-btn:active {
+  transform: translateY(4px);
+  box-shadow: 0 1px 0 #3b2516;
+}
+
+.gather-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 40px;
+}
+
+@media (max-width: 1000px) {
+  .gather-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+}
+
+.gather-col {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(18px, 3.4vh, 28px);
+}
+
+.card-label {
+  font-size: 20px;
+  font-weight: 800;
+}
+
+/* The room code on a riveted parchment plate. */
+.code-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 28px 32px;
+  color: #3b2516;
+  background: #f3e2c0;
+  border: 5px solid #3b2516;
+  border-radius: 18px;
+  box-shadow: 0 8px 0 #3b2516;
+}
+
+.rivet {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #6b4a33;
+}
+
+.rivet.tl { left: 14px; top: 14px; }
+.rivet.tr { right: 14px; top: 14px; }
+.rivet.bl { left: 14px; bottom: 14px; }
+.rivet.br { right: 14px; bottom: 14px; }
+
+.code-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 20px;
+}
+
+.code-big {
+  font-family: 'Lilita One', 'Arial Black', sans-serif;
+  font-size: clamp(64px, 11.8vh, 96px);
+  line-height: 1;
+  letter-spacing: 6px;
+  color: #2a1608;
+  user-select: all; /* one click selects the whole code */
+}
+
+.small-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 56px;
+  padding: 0 22px;
+  font-family: 'Lilita One', 'Arial Black', sans-serif;
+  font-weight: 400;
+  font-size: 22px;
+  color: #fff4dc;
+  background: #8a5a36;
+  border: 4px solid #3b2516;
+  border-radius: 12px;
+  box-shadow: 0 5px 0 #3b2516;
+}
+
+.small-btn svg {
+  width: 22px;
+  height: 22px;
+  stroke-width: 2.6;
+}
+
+.code-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #5a3418;
+}
+
+.full-tag {
+  padding: 4px 10px;
+  font-size: 15px;
+  font-weight: 800;
+  color: #f3e2c0;
+  background: #3b2516;
+  border-radius: 8px;
+}
+
+.code-hint:has(.full-tag:not([hidden])) {
+  font-weight: 800;
+}
+
+.dark-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px 28px;
+  background: #1b2039;
+  border: 3px solid #4a5587;
+  border-radius: 16px;
+}
+
+/* Voice chat is not built yet: the card says so, in muted colours. */
+.voice-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  color: #8f97c2;
+}
+
+.voice-row svg {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  stroke-width: 2.4;
+}
+
+.voice-text {
+  display: flex;
+  flex-grow: 1;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.meter {
+  height: 12px;
+  overflow: hidden;
+  background: #2d3459;
+  border-radius: 6px;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 17px;
+  font-weight: 700;
+  color: #8f97c2;
+}
+
+.check input {
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: #f2a33a;
+}
+
+.crew-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.crew-count {
+  font-size: 17px;
+  font-weight: 700;
+  color: #c9cff0;
+}
+
+.crew-count.full,
+.badge {
+  padding: 6px 12px;
+  font-size: 15px;
+  font-weight: 800;
+  color: #143d26;
+  background: #9fe3b8;
+  border-radius: 8px;
+}
+
+.badge.weak {
+  color: #3d2a08;
+  background: #ffd58a;
+}
+
+.crew-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.crew-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 48px;
+  padding: 16px 18px;
+  background: #2d3459;
+  border: 3px solid transparent;
+  border-radius: 12px;
+}
+
+.crew-row.empty {
+  background: none;
+  border: 3px dashed #4a5587;
+}
+
+.avatar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  color: #3b2516;
+  background: #f3e2c0;
+  border-radius: 50%;
+}
+
+.avatar svg {
+  width: 26px;
+  height: 26px;
+  stroke-width: 2.4;
+}
+
+.crew-row.empty .avatar {
+  box-sizing: border-box;
+  background: none;
+  border: 3px dashed #6f7894;
+}
+
+.crew-who {
+  display: flex;
+  flex-grow: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.crew-name {
+  overflow: hidden;
+  font-size: 20px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crew-sub {
+  font-size: 15px;
+  font-weight: 600;
+  color: #c9cff0;
+}
+
+.crew-wait {
+  flex-grow: 1;
+  font-size: 19px;
+  font-weight: 700;
+  color: #c9cff0;
+}
+
+.name-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #ffd58a;
+}
+
+.name-line svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.6;
+}
+
+.name-input {
+  width: min(200px, 100%);
+  height: 38px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 19px;
+  font-weight: 800;
+  color: #fff4dc;
+  background: #1b2039;
+  border: 2px dashed #ffd58a;
+  border-radius: 8px;
+}
+
+.name-input:focus {
+  border-style: solid;
+  outline: none;
+}
+
+.gather-go {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.go-btn {
+  justify-content: center;
+}
+
+/* Taller than the menu's Host button, so .menu-btn.primary is outranked. */
+.menu-btn.primary.go-btn {
+  height: clamp(64px, 9.9vh, 80px);
+  font-size: clamp(28px, 4.2vh, 34px);
+}
+
+.go-btn svg {
+  width: 30px;
+  height: 30px;
+  stroke-width: 2.8;
+}
+
+/* Everyone is here: a glowing ring says "press me". */
+.go-btn.ready {
+  box-shadow:
+    0 7px 0 #3b2516,
+    0 0 0 6px #ffd58a;
+}
+
+.go-btn.ready:active {
+  box-shadow:
+    0 2px 0 #3b2516,
+    0 0 0 6px #ffd58a;
+}
+
+.gather-hint {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  text-align: center;
+  color: #c9cff0;
+}
+
+/* A joiner has no button: the hint becomes a card saying who to wait for. */
+.gather-hint.waiting {
+  padding: 22px;
+  font-size: 19px;
+  font-weight: 800;
+  color: #fff4dc;
+  background: #1b2039;
+  border: 3px dashed #4a5587;
+  border-radius: 16px;
+}
+
+.icon-btn:focus-visible,
+.small-btn:focus-visible,
+.name-input:focus-visible {
+  outline: 3px solid #ffd84d;
+  outline-offset: 3px;
+}
+
+/* --- Join a game --------------------------------------------------------
+   The parchment card holds the form; errors turn the code field red. */
+
+.join-card {
+  gap: 22px;
+  padding: 32px 36px;
+  margin: 0;
+}
+
+.join-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.paper-input {
+  height: 60px;
+  padding: 0 18px;
+  box-sizing: border-box;
+  width: 100%;
+  font: inherit;
+  font-size: 24px;
+  font-weight: 800;
+  color: #2a1608;
+  background: #fffaf0;
+  border: 4px solid #3b2516;
+  border-radius: 12px;
+}
+
+.paper-input::placeholder {
+  color: #b9a37f;
+}
+
+.paper-input:focus-visible {
+  outline: 3px solid #f2a33a;
+  outline-offset: 2px;
+}
+
+.paper-input:disabled {
+  opacity: 0.7;
+}
+
+.code-input {
+  height: clamp(80px, 12.8vh, 104px);
+  padding: 0 24px;
+  font-family: 'Lilita One', 'Arial Black', sans-serif;
+  font-weight: 400;
+  font-size: clamp(52px, 8.9vh, 72px);
+  letter-spacing: 6px;
+  text-transform: uppercase;
+}
+
+.code-input.bad {
+  color: #8a2a22;
+  background: #fde3df;
+  border-color: #c9443a;
+}
+
+.join-hint {
+  font-size: 17px;
+  font-weight: 600;
+  color: #5a3418;
+}
+
+.join-error {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  color: #fff4dc;
+  background: #c9443a;
+  border-radius: 12px;
+}
+
+.join-error svg {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.join-error div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.join-error strong {
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.join-error span {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+/* Connecting: the button greys out and a spinner takes the arrow's place. */
+.go-btn .spinner {
+  display: none;
+  width: 30px;
+  height: 30px;
+  box-sizing: border-box;
+  border: 5px solid #5a3418;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+.go-btn.busy,
+.go-btn.busy:hover {
+  color: #5a3418;
+  background: #c9b48a;
+  cursor: progress;
+}
+
+.go-btn.busy .spinner {
+  display: block;
+}
+
+.go-btn.busy .arrow {
+  display: none;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .go-btn .spinner {
+    animation-duration: 3s;
+  }
+}
+
+.recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.recent-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 52px;
+  padding: 14px 18px;
+  font: inherit;
+  font-size: 18px;
+  font-weight: 800;
+  text-align: left;
+  color: #fff4dc;
+  background: #2d3459;
+  border: 3px solid transparent;
+  border-radius: 12px;
+}
+
+.recent-row:hover {
+  filter: none;
+  border-color: #4a5587;
+}
+
+.recent-row:focus-visible {
+  outline: 3px solid #ffd84d;
+  outline-offset: 2px;
+}
+
+.recent-row span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-code {
+  flex: none;
+  font-family: 'Lilita One', 'Arial Black', sans-serif;
+  font-weight: 400;
+  letter-spacing: 2px;
+  color: #ffd58a;
+}
+
+.recent-empty {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #c9cff0;
+}
+
+.tip-card {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 18px 22px;
+  background: #2d3459;
+  border-radius: 14px;
+}
+
+.tip-card svg {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  margin-top: 2px;
+  fill: none;
+  stroke: #ffd58a;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tip-card p {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: #e6e9fb;
+}
+
+/* --- Settings ----------------------------------------------------------
+   Over whatever opened it: the menu, or the game while the mouse is free. */
+
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  overflow-y: auto;
+  background: #222846;
+  font-family: 'Nunito', 'Trebuchet MS', sans-serif;
+  font-weight: 600;
+  color: #fff4dc;
+}
+
+.settings-wrap {
+  position: relative;
+  max-width: 1216px;
+  margin: 0 auto;
+  padding: clamp(20px, 7.9vh, 64px) clamp(20px, 7.8vw, 112px) 40px;
+}
+
+.settings-head {
+  margin-bottom: clamp(16px, 4vh, 36px);
+}
+
+.settings-body {
+  display: flex;
+  gap: 36px;
+  align-items: flex-start;
+}
+
+.settings-nav {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 16px;
+  width: 300px;
+}
+
+.tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 64px;
+  padding: 0 20px;
+  font-family: 'Lilita One', 'Arial Black', sans-serif;
+  font-weight: 400;
+  font-size: 24px;
+  text-align: left;
+  color: #fff4dc;
+  background: #8a5a36;
+  border: 4px solid #3b2516;
+  border-radius: 12px;
+  box-shadow: 0 5px 0 #3b2516;
+}
+
+.tab-btn svg {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tab-btn:hover {
+  filter: none;
+  background: #9c6a42;
+}
+
+.tab-btn.active {
+  color: #2a1608;
+  background: #f2a33a;
+}
+
+.tab-btn:focus-visible,
+.rebind-btn:focus-visible,
+.set-select:focus-visible,
+.set-check:focus-visible,
+.settings-panel input[type="range"]:focus-visible {
+  outline: 3px solid #ffd84d;
+  outline-offset: 3px;
+}
+
+.settings-panel {
+  flex-grow: 1;
+  min-width: 0;
+  max-height: max(320px, calc(100vh - 330px));
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 26px 32px;
+  background: #1b2039;
+  border: 3px solid #4a5587;
+  border-radius: 18px;
+}
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.pane-title {
+  margin: 0;
+  font-family: 'Lilita One', 'Arial Black', sans-serif;
+  font-weight: 400;
+  font-size: 34px;
+}
+
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.set-label {
+  flex: none;
+  width: 260px;
+  padding: 0;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+/* A fieldset's legend only sits in the row when it floats. */
+legend.set-label {
+  float: left;
+  margin-right: 20px;
+}
+
+.set-label.grow,
+.set-text {
+  flex-grow: 1;
+  width: auto;
+}
+
+.set-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.set-text .set-label {
+  width: auto;
+}
+
+.set-sub {
+  font-size: 15px;
+  font-weight: 600;
+  color: #c9cff0;
+}
+
+.set-row input[type="range"] {
+  flex-grow: 1;
+  min-width: 80px;
+  height: 28px;
+  margin: 0;
+  accent-color: #f2a33a;
+}
+
+.set-value {
+  flex: none;
+  width: 64px;
+  font-size: 18px;
+  font-weight: 800;
+  text-align: right;
+  color: #ffd58a;
+}
+
+.set-select {
+  flex: none;
+  min-width: 240px;
+  height: 48px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 17px;
+  font-weight: 800;
+  color: #2a1608;
+  background: #f3e2c0;
+  border: 3px solid #3b2516;
+  border-radius: 10px;
+}
+
+.set-check {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  accent-color: #f2a33a;
+}
+
+.set-divider {
+  height: 2px;
+  background: #2d3459;
+}
+
+.set-hint {
+  margin: 0;
+  font-size: 15px;
+  color: #c9cff0;
+}
+
+/* Settings for things the game does not have yet: shown, but greyed. */
+.soon-box {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 16px 18px;
+  border: 2px dashed #4a5587;
+  border-radius: 12px;
+}
+
+.soon-note {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: #ffd58a;
+}
+
+.set-row.soon {
+  opacity: 0.55;
+}
+
+.soon-chip {
+  display: inline-block;
+  flex: none;
+  padding: 2px 8px;
+  font-size: 13px;
+  font-weight: 800;
+  color: #c9cff0;
+  vertical-align: middle;
+  background: #1b2039;
+  border-radius: 6px;
+}
+
+.radio-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+}
+
+.radio-row label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.radio-row input {
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: #f2a33a;
+}
+
+/* Key bindings: two columns of rows, each with its key on a cap. */
+.bind-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.bind-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 14px;
+  background: #2d3459;
+  border: 2px solid transparent;
+  border-radius: 10px;
+}
+
+.bind-row.fixed {
+  opacity: 0.7;
+}
+
+.bind-row.listening {
+  border-color: #f2a33a;
+}
+
+.bind-name {
+  flex-grow: 1;
+  min-width: 0;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.key-cap {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  height: 40px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  font-family: 'Lilita One', 'Arial Black', sans-serif;
+  font-size: 18px;
+  white-space: nowrap;
+  color: #2a1608;
+  background: #fff4dc;
+  border-radius: 8px;
+}
+
+.listening .key-cap {
+  font-family: 'Nunito', 'Trebuchet MS', sans-serif;
+  font-size: 15px;
+  font-weight: 800;
+  background: #ffd58a;
+  animation: key-wait 1s ease-in-out infinite;
+}
+
+@keyframes key-wait {
+  50% {
+    background: #f2a33a;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .listening .key-cap {
+    animation: none;
+  }
+}
+
+.rebind-btn {
+  flex: none;
+  height: 40px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  color: #fff4dc;
+  background: #1b2039;
+  border: 2px solid #4a5587;
+  border-radius: 8px;
+}
+
+.rebind-btn:hover {
+  filter: none;
+  border-color: #7f8bc4;
+}
+
+.bind-note {
+  min-height: 1.4em;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: #ffd58a;
+}
+
+.settings-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 28px;
+}
+
+.reset-btn {
+  height: 60px;
+  font-size: 24px;
+}
+
+.menu-btn.primary.done-btn {
+  height: 68px;
+  padding: 0 40px;
+  font-size: 30px;
+}
+
+/* Narrow windows: tabs go across the top, rows stack. */
+@media (max-width: 900px) {
+  .settings-body {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .settings-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    width: auto;
+  }
+
+  .tab-btn {
+    height: 52px;
+    font-size: 19px;
+  }
+
+  .settings-panel {
+    max-height: none;
+  }
+
+  .set-row {
+    flex-wrap: wrap;
+  }
+
+  .set-label {
+    width: 100%;
+  }
+
+  .bind-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* --- Role colour keys (menu corner, settings preview) ----------------- */
+
+.role-key i {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+}
+
+.role-key i.with-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+}
+
+.role-key i svg {
+  width: 17px;
+  height: 17px;
+}
+
+.palette-swatch {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  width: fit-content;
+  padding: 10px 16px;
+  font-size: 16px;
+  font-weight: 800;
+  background: #2d3459;
+  border-radius: 12px;
+}
+
+.palette-swatch span {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+/* --- In-game extras ---------------------------------------------------- */
+
+#subtitle {
+  position: absolute;
+  left: 50%;
+  bottom: 72px;
+  transform: translateX(-50%);
+  max-width: 80vw;
+  padding: 8px 16px;
+  font-size: calc(18px * var(--hud-scale, 1));
+  font-weight: 800;
+  line-height: 1.45;
+  text-align: center;
+  white-space: pre-line;
+  background: rgba(10, 12, 26, 0.78);
+  border-radius: 10px;
+}
+
+#fps {
+  position: fixed;
+  left: 8px;
+  top: 8px;
+  z-index: 40;
+  padding: 3px 8px;
+  font: 700 13px ui-monospace, Consolas, monospace;
+  color: #9fe3b8;
+  background: rgba(10, 12, 26, 0.75);
+  border-radius: 6px;
+  pointer-events: none;
 }

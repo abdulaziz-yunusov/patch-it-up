@@ -2,14 +2,15 @@
 // joins the two halves of a session: the host simulating, everyone drawing.
 
 import * as THREE from 'three';
-import { buildShip, addLights, addSky, applyState, groundHeight } from './world.js';
+import { buildShip, addLights, addSky, applyRolePalette, applyState, groundHeight, hatchShut, takeoffProgress } from './world.js';
 import { loadDockModel, updateDock, resetDockEffects } from './dock.js';
 import { loadHelmModel, updateHelm, resetHelmEffects } from './helm.js';
 import { loadPowerModel, updatePower, resetPowerEffects } from './power.js';
 import { loadEngineModel, updateEngineRoom, resetEngineEffects } from './engine.js';
-import { LocalPlayer, RemoteCrew, createBody, stepBody } from './player.js';
+import { LocalPlayer, ROLE_COLORS, RemoteCrew, createBody, stepBody } from './player.js';
 import { InteractionView, HostInteractions } from './interact.js';
 import { Net, makeCode } from './network.js';
+import { play } from './sound.js';
 import {
   RULES,
   ROUTES,
@@ -24,18 +25,35 @@ import {
 } from './state.js';
 import * as game from './game.js';
 import { showScreen, currentScreen } from './screens.js';
-import { initMenu, playerName } from './menu.js';
+import { initMenu, playerName, refreshNameChip } from './menu.js';
+import { initGathering, resetGathering, updateGathering } from './gathering.js';
+import { initJoin, joinFailed, joinSucceeded, openJoin } from './join.js';
+import { load, save } from './save.js';
+import { keyLabel, moveLabel, onSettingsChange, settings } from './settings.js';
+import { closeSettings, initSettings, isSettingsOpen, openSettings } from './settingsScreen.js';
+import { PALETTES, fillRoleKey } from './roleLook.js';
+import { createRain } from './rain.js';
+import { resetSubtitles, updateSubtitles } from './subtitles.js';
+
+// Graphics quality is the resolution the scene is drawn at: below the
+// screen's own on Low, up to a sharp screen's full detail on High.
+function pixelRatio(quality) {
+  const screen = window.devicePixelRatio || 1;
+  if (quality === 'low') return Math.min(screen, 1) * 0.7;
+  if (quality === 'high') return Math.min(screen, 2);
+  return Math.min(screen, 1.25);
+}
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setPixelRatio(pixelRatio(settings.quality));
 document.body.prepend(renderer.domElement);
 
 const scene = new THREE.Scene();
 addSky(scene);
 addLights(scene);
 
-const camera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 0.1, 400);
+const camera = new THREE.PerspectiveCamera(settings.fov, window.innerWidth / window.innerHeight, 0.1, 400);
 // PointerLockControls turns the camera as yaw then pitch; reading the angles
 // back only gives that pair if the euler is decomposed in the same order.
 camera.rotation.order = 'YXZ';
@@ -67,6 +85,10 @@ const playUi = document.getElementById('play');
 const timerText = document.getElementById('timer');
 const altitudeFill = document.getElementById('altitudeFill');
 const altitudeText = document.getElementById('altitudeText');
+const furnaceFill = document.getElementById('furnaceFill');
+const furnaceText = document.getElementById('furnaceText');
+const takeoffTitle = document.getElementById('takeoffTitle');
+const takeoffJob = document.getElementById('takeoffJob');
 const flash = document.getElementById('flash');
 const resultTitle = document.getElementById('resultTitle');
 const resultDetail = document.getElementById('resultDetail');
@@ -74,12 +96,14 @@ const lockOverlay = document.getElementById('lockOverlay');
 const statusLine = document.getElementById('status');
 const banner = document.getElementById('banner');
 const menuNote = document.getElementById('menuNote');
-const joinError = document.getElementById('joinError');
 const KIT_INTERACT = world.kit.userData.interact;
 
-// True from the moment you board until you are back at the menu; the
-// phase (lobby, flight, result) says which screen to show.
+// True from the moment you host or join until you are back at the menu;
+// the phase (gathering, lobby, takeoff, flight, result) says which screen
+// to show. inWorld: this browser has stepped onto the dock (it does not
+// on the crew screen, where there is nothing to walk around).
 let sessionActive = false;
+let inWorld = false;
 let againRequested = false;
 let seenOpened = 0; // to flash when a new hole tears
 let flashUntil = 0;
@@ -88,7 +112,7 @@ let flashUntil = 0;
 // the dock there is a platform, a gangplank and an open cargo door.
 const groundAt = (x, z) => groundHeight(x, z, state.phase);
 function collidersFor(role) {
-  if (state.phase === 'flight') return world.flightColliders;
+  if (state.phase !== 'lobby') return world.flightColliders; // hatch shut, dock gone
   // The gangplank is barred until you are wearing a uniform.
   return role === 'crew' ? world.lobbyGatedColliders : world.lobbyColliders;
 }
@@ -100,6 +124,7 @@ const emptyInput = () => ({
   use: false,
   useTap: false,
   drop: false,
+  bell: false,
   again: false,
 });
 
@@ -107,7 +132,10 @@ const emptyInput = () => ({
 
 net.onHello = (name) => {
   if (playerCount() >= RULES.maxPlayers) return null; // "Ship is full"
-  const index = playerCount();
+  // The first free seat: p1 leaving and someone new arriving must not
+  // hand out a second p2.
+  let index = 1;
+  while (state.players[`p${index}`]) index += 1;
   const seated = newPlayer(`p${index}`, name || 'Deckhand', index);
   state.players[seated.id] = seated;
   bodies.set(seated.id, createBody(seated.x, seated.y, seated.z));
@@ -156,7 +184,20 @@ net.onLost = () => leaveShip('The ship went out of range');
 
 initMenu({
   onHost: () => hostGame(),
+  onJoin: () => openJoin(),
+  onSettings: () => openSettings(),
+});
+
+initJoin({
   onJoin: (code) => joinGame(code),
+  onCancel: () => {
+    joinAttempt += 1; // whatever that connection does next, nobody is waiting for it
+    net.close();
+  },
+  onLeave: () => {
+    refreshNameChip();
+    showScreen('menu');
+  },
 });
 
 async function hostGame() {
@@ -194,42 +235,61 @@ async function hostGame() {
   inputs.set(me.id, emptyInput());
   lastHeard.clear();
   note('');
-  boardShip(me);
+  // The crew screen first: the code to read out, and who has joined.
+  state.phase = 'gathering';
+  state.countdown = null;
+  startSession();
 }
 
+// Each try gets a number; a cancelled one that answers late is ignored.
+let joinAttempt = 0;
+
 async function joinGame(code) {
-  joinError.hidden = true;
+  const attempt = ++joinAttempt;
   local.name = playerName();
   local.isHost = false;
   try {
     const welcome = await net.join(code, local.name);
+    if (attempt !== joinAttempt) return;
     local.id = welcome.id;
     local.code = code;
     applySnapshot(welcome.s);
     lastStateAt = performance.now();
-    boardShip(state.players[local.id]);
+    joinSucceeded(code, state.players.host?.name ?? 'The host');
+    startSession();
   } catch (err) {
+    if (attempt !== joinAttempt) return;
     net.close();
-    joinError.textContent = err.message;
-    joinError.hidden = false;
+    joinFailed(err.message, code);
   }
 }
 
-function boardShip(me) {
+function startSession() {
+  sessionActive = true;
+  inWorld = false;
+  seenOpened = state.opened;
+  syncPhaseUi();
+}
+
+// Off the crew screen and onto the dock (or wherever the ship is, for
+// someone who joins late): the camera goes to your own eyes.
+function enterWorld() {
+  const me = state.players[local.id];
+  if (!me) return;
+  inWorld = true;
   player.enter(me.x, me.y, me.z, me.yaw);
   crew.sync(state.players, local.id);
   lockOverlay.hidden = false;
-  sessionActive = true;
-  seenOpened = state.opened;
-  syncPhaseUi();
 }
 
 // One screen per phase, and the result panel needs the mouse back.
 function syncPhaseUi() {
   if (currentScreen() !== state.phase) showScreen(state.phase);
-  const playing = state.phase !== 'result';
+  const gathering = state.phase === 'gathering';
+  if (!gathering && !inWorld) enterWorld();
+  const playing = state.phase !== 'result' && !gathering;
   playUi.hidden = !playing;
-  if (!playing) {
+  if (state.phase === 'result') {
     if (player.controls.isLocked) player.controls.unlock();
     resultTitle.textContent = state.result === 'landed' ? 'Landed!' : 'The ship went down';
     const holes = state.patched === 1 ? '1 breach' : `${state.patched} breaches`;
@@ -242,6 +302,7 @@ function syncPhaseUi() {
 
 function leaveShip(message = '') {
   sessionActive = false;
+  inWorld = false;
   player.controls.unlock();
   net.close();
   state.players = {};
@@ -258,9 +319,25 @@ function leaveShip(message = '') {
   resetHelmEffects();
   resetPowerEffects();
   resetEngineEffects();
+  resetGathering();
+  resetSubtitles();
+  if (isSettingsOpen()) closeSettings();
+  refreshNameChip();
   note(message);
   showScreen('menu');
 }
+
+initGathering({
+  onBack: () => leaveShip(),
+  onGo: () => game.goToDock(),
+  // The host renames themselves on the crew screen; joiners already have it.
+  onRename: (name) => {
+    save({ ...load(), name });
+    local.name = playerName();
+    const me = state.players[local.id];
+    if (me) me.name = local.name;
+  },
+});
 
 function note(message) {
   menuNote.textContent = message;
@@ -272,6 +349,9 @@ player.controls.addEventListener('unlock', () => {
   if (sessionActive && state.phase !== 'result') lockOverlay.hidden = false;
 });
 document.getElementById('clickToPlay').addEventListener('click', () => player.controls.lock());
+// Settings mid-game: the game goes on underneath (it is online), and
+// "Click to play" is waiting when the page closes.
+document.getElementById('openSettings').addEventListener('click', () => openSettings());
 document.getElementById('leaveShip').addEventListener('click', () => leaveShip());
 document.getElementById('resultBack').addEventListener('click', () => {
   if (!sessionActive) {
@@ -295,6 +375,7 @@ function queue(input) {
   pending.use = input.use;
   pending.useTap = pending.useTap || input.useTap;
   pending.drop = pending.drop || input.drop;
+  pending.bell = pending.bell || input.bell;
   pending.again = pending.again || input.again;
 }
 
@@ -303,6 +384,15 @@ function hostTick(dt, now) {
     if (id === local.id) continue;
     const heard = lastHeard.get(id) ?? now;
     if (now - heard > RULES.timeoutMs) dropPlayer(id);
+    else state.players[id].signal = now - heard > RULES.weakSignalMs ? 'weak' : 'good';
+  }
+
+  // On the crew screen nobody walks or works a station: the keys being
+  // pressed are a name being typed. The state still goes out, so joiners
+  // see the crew list fill up.
+  if (state.phase === 'gathering') {
+    net.broadcast(snapshot(), now);
+    return;
   }
 
   for (const seated of Object.values(state.players)) {
@@ -322,6 +412,11 @@ function hostTick(dt, now) {
       game.dropKit(seated, body, input.yaw ?? 0);
       input.drop = false;
     }
+    // The pilot's bell key rings the cabin bell from anywhere aboard.
+    if (input.bell) {
+      input.bell = false;
+      if (seated.role === 'pilot') game.ringCabinBell();
+    }
     if (input.again) {
       input.again = false;
       returnToDock();
@@ -329,6 +424,7 @@ function hostTick(dt, now) {
   }
 
   if (state.phase === 'lobby') game.tickLobby(dt);
+  else if (state.phase === 'takeoff') game.tickTakeoff(dt);
   else if (state.phase === 'flight') game.tickFlight(dt);
 
   hostInteractions.update(dt, state.players, bodies, inputs, {
@@ -364,7 +460,8 @@ function returnToDock() {
   });
 }
 
-// Timer, altitude bar, and a red wash the moment a new hole tears.
+// Timer, altitude bar and which way it is heading, the furnace, and a
+// red wash the moment a new hole tears.
 function updateRoundHud(now) {
   const minutes = Math.floor(state.timeLeft / 60);
   const seconds = Math.floor(state.timeLeft % 60);
@@ -372,7 +469,15 @@ function updateRoundHud(now) {
   const altitude = Math.max(0, Math.round(state.altitude));
   altitudeFill.style.width = `${altitude}%`;
   altitudeFill.classList.toggle('low', altitude <= 30);
-  altitudeText.textContent = `Altitude ${altitude}%`;
+  const trend = state.climb > 0.05 ? ' ▲' : state.climb < -0.05 ? ' ▼' : '';
+  altitudeText.textContent = `Altitude ${altitude}%${trend}`;
+
+  const heat = Math.round(state.heat * 100);
+  furnaceFill.style.width = `${heat}%`;
+  furnaceFill.classList.toggle('low', heat <= 25);
+  furnaceText.textContent = state.spare > 0
+    ? `Furnace ${heat}% · ${state.spare} spare power`
+    : `Furnace ${heat}%`;
 
   if (state.opened > seenOpened) {
     seenOpened = state.opened;
@@ -404,6 +509,34 @@ function updateKit() {
     kit.position.set(0, 0.15, -0.5);
     kit.rotation.set(0, 0, 0);
   }
+}
+
+// What each role is for, read out while the ship climbs, with the keys
+// the player has actually bound.
+const JOBS = {
+  mechanic: () =>
+    `Mechanic: patch the breaches (hold ${keyLabel(settings.keys.interact)}) and keep the furnace stoked. A cold furnace means no power.`,
+  engineer: () => 'Engineer: pull the levers to share power. Lift holds her up, engines steer, shields stop rocks.',
+  pilot: () =>
+    `Pilot: take the wheel and steer round the rocks. Starved engines make her slow to answer. ${keyLabel(settings.keys.bell)} rings the bell.`,
+};
+
+// The climb: what is happening, then your job, then a last call.
+let seenPhase = null;
+let seenHatch = false;
+function updateTakeoff() {
+  const phase = state.phase;
+  if (phase === 'takeoff' && seenPhase === 'lobby') play('engineer_steam_hiss', 0.6); // moorings off
+  seenPhase = phase;
+  const shut = hatchShut(state);
+  if (shut && !seenHatch && phase === 'takeoff') play('engineer_lever_clunk', 0.8); // the hatch slams
+  seenHatch = shut;
+  if (phase !== 'takeoff') return;
+
+  takeoffTitle.textContent =
+    state.takeoff < 1.5 ? 'Casting off!' : !hatchShut(state) ? 'Climbing to cruising height' : 'Hatch shut. Brace yourselves!';
+  const role = state.players[local.id]?.role;
+  takeoffJob.textContent = JOBS[role]?.() ?? '';
 }
 
 // What the dock is waiting for, in one line.
@@ -445,7 +578,7 @@ function updateStatus() {
   const parts = [
     `Room ${local.code}${local.isHost ? ' (host)' : ''}`,
     state.phase === 'flight'
-      ? `${role} · power ${state.power.join('-')} · helm ${state.steering.toFixed(2)}`
+      ? `${role} · power ${state.power.join('-')} +${state.spare} · helm ${state.steering.toFixed(2)}`
       : `${role} · ${ROUTES[state.route].name}`,
     `Crew: ${names}`,
   ];
@@ -468,12 +601,26 @@ function loop() {
   const t = clock.elapsedTime;
   const now = performance.now();
 
-  // The ship rocks in the storm, but not while it is moored.
-  const rocking = state.phase === 'flight' ? 1 : 0;
-  ship.rotation.z = Math.sin(t * 0.8) * 0.06 * rocking;
+  // The ship rocks in the storm, but not while it is moored. On the way
+  // up the storm builds, the bow lifts, and the deck shudders as she
+  // tears free of the moorings.
+  const climbed = takeoffProgress(state);
+  const motion = settings.cameraMotion / 100;
+  const rocking = (state.phase === 'result' ? 0 : climbed) * motion;
+  const noseUp = state.phase === 'takeoff' ? Math.sin(climbed * Math.PI) * 0.05 * motion : 0;
+  const lurch = state.phase === 'takeoff' ? Math.max(0, 1 - state.takeoff / 1.2) * Math.sin(t * 40) * 0.012 * motion : 0;
+  ship.rotation.z = Math.sin(t * 0.8) * 0.06 * rocking + noseUp + lurch;
   ship.rotation.x = Math.sin(t * 0.5) * 0.03 * rocking;
 
-  if (sessionActive) {
+  if (sessionActive && state.phase === 'gathering') {
+    syncPhaseUi();
+    player.readInput(); // keys typed on this screen are not for walking
+    if (local.isHost) hostTick(dt, now);
+    else if (now - lastStateAt > RULES.timeoutMs) leaveShip('The ship went out of range');
+    else net.sendInput(emptyInput(), now); // still here, so the host keeps our seat
+    if (state.phase === 'gathering') updateGathering(state, local, now);
+    orbitShip(t);
+  } else if (sessionActive) {
     syncPhaseUi();
     const input = player.readInput();
     input.again = againRequested;
@@ -485,6 +632,7 @@ function loop() {
         Object.assign(own, input, {
           useTap: own.useTap || input.useTap,
           drop: own.drop || input.drop,
+          bell: own.bell || input.bell,
           again: own.again || input.again,
         });
       }
@@ -498,6 +646,7 @@ function loop() {
       if (net.sendInput(pending, now)) {
         pending.useTap = false;
         pending.drop = false;
+        pending.bell = false;
         pending.again = false;
       }
     }
@@ -506,6 +655,8 @@ function loop() {
     updateStatus();
     updateBanner();
     updateRoundHud(now);
+    updateTakeoff();
+    updateSubtitles(state, now, settings.subtitles, subtitleLine);
   } else {
     orbitShip(t);
   }
@@ -517,10 +668,76 @@ function loop() {
   updateHelm(world, state, { camera, view, player, now, dt });
   updatePower(world, state, { now, dt });
   updateEngineRoom(world, state, { now, dt });
+  const airborne = state.phase === 'takeoff' || state.phase === 'flight';
+  rain.update(dt, settings.rain && sessionActive && inWorld && airborne);
+  // The Blender dock swaps in its own lockers once it loads: paint those too.
+  if (world.lockers !== paintedLockers) paintRoles();
+  countFrame(now);
 
   renderer.render(scene, camera);
   requestAnimationFrame(loop);
 }
+
+// --- settings ----------------------------------------------------------
+
+const subtitleLine = document.getElementById('subtitle');
+const fpsBox = document.getElementById('fps');
+const rain = createRain(ship);
+const TEXT_SCALE = { normal: 1, large: 1.25, xlarge: 1.5 };
+let paintedLockers = null;
+
+// Role colours everywhere they show: teammates, lockers, room stripes,
+// the menu's key; symbols beside them when that is on.
+function paintRoles() {
+  const palette = PALETTES[settings.colorblind] ?? PALETTES.off;
+  Object.assign(ROLE_COLORS, palette);
+  applyRolePalette(world, palette, settings.colorblind === 'off');
+  paintedLockers = world.lockers;
+  for (const key of document.querySelectorAll('.role-key')) fillRoleKey(key, palette, settings.roleSymbols);
+  crew.sync(state.players, local.id); // recolours and re-badges the spheres now
+}
+
+// The HUD's key hints say whatever the player has bound.
+function showKeyHints() {
+  for (const el of document.querySelectorAll('[data-key]')) {
+    el.textContent = el.dataset.key === 'move' ? moveLabel() : keyLabel(settings.keys[el.dataset.key]);
+  }
+}
+
+function applySettings(key) {
+  const all = key === null;
+  if (all || key === 'fov') {
+    camera.fov = settings.fov;
+    camera.updateProjectionMatrix();
+  }
+  if (all || key === 'quality') {
+    renderer.setPixelRatio(pixelRatio(settings.quality));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+  if (all || key === 'textSize') {
+    document.documentElement.style.setProperty('--hud-scale', String(TEXT_SCALE[settings.textSize] ?? 1));
+  }
+  if (all || key === 'colorblind' || key === 'roleSymbols') paintRoles();
+  if (all || key === 'keys') showKeyHints();
+  if (all || key === 'showFps') fpsBox.hidden = !settings.showFps;
+}
+
+// Frames per second, counted over half a second at a time.
+let frames = 0;
+let framesSince = performance.now();
+function countFrame(now) {
+  if (!settings.showFps) return;
+  frames += 1;
+  if (now - framesSince >= 500) {
+    fpsBox.textContent = `${Math.round((frames * 1000) / (now - framesSince))} FPS`;
+    frames = 0;
+    framesSince = now;
+  }
+}
+
+initSettings();
+onSettingsChange(applySettings);
+applySettings(null);
 
 // Dev-only handle for driving the game from the console or a test script.
 if (import.meta.env.DEV) {

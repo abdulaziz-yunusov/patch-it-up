@@ -85,7 +85,7 @@ export function groundHeight(x, z, phase) {
   // would be a 10 cm strip of thin air.
   const insideHull = Math.abs(x) < SHIP.length / 2 - 0.1 && Math.abs(z) < SHIP.width / 2 + 0.05;
   if (insideHull) return 0;
-  if (phase === 'flight') return 0; // the dock is gone; nothing else to stand on
+  if (phase !== 'lobby') return 0; // the dock is gone; nothing else to stand on
 
   const { halfWidth, zFoot, zTop } = GANGPLANK;
   if (Math.abs(x) <= halfWidth && z >= zFoot && z <= zTop) {
@@ -175,9 +175,12 @@ export function buildShip() {
   }
 
   // Room accents: a colored floor inlay and a stripe along both side walls.
+  // Kept by room, so the colour-blind palettes can repaint them.
+  const roomMaterials = {};
   for (const room of ROOMS) {
     const accent = new THREE.MeshStandardMaterial({ color: room.color, flatShading: true });
     const inlay = new THREE.MeshStandardMaterial({ color: room.floor, flatShading: true });
+    roomMaterials[room.id] = { accent, inlay };
     part(box(7.4, 0.06, 5.4), inlay, room.x, 0.03, 0);
     for (const z of [-width / 2, width / 2]) {
       part(box(7.4, 0.22, 0.06), accent, room.x, 2.55, z - Math.sign(z) * 0.08);
@@ -213,6 +216,7 @@ export function buildShip() {
   return {
     ship,
     rock,
+    roomMaterials,
     colliders,
     breaches,
     hatch,
@@ -226,6 +230,47 @@ export function buildShip() {
   };
 }
 
+// How far through the climb away from the dock, 0 .. 1, eased so the
+// ship lurches free, picks up speed, then levels off at cruising height.
+export function takeoffProgress(state) {
+  if (state.phase !== 'takeoff') return state.phase === 'lobby' ? 0 : 1;
+  const t = Math.min(1, state.takeoff / RULES.takeoffSeconds);
+  return t * t * (3 - 2 * t);
+}
+
+// The hatch slams this long before the round starts.
+const HATCH_SHUTS_BEFORE = 1.5;
+export function hatchShut(state) {
+  if (state.phase !== 'takeoff') return state.phase !== 'lobby';
+  return state.takeoff >= RULES.takeoffSeconds - HATCH_SHUTS_BEFORE;
+}
+
+// The dock falls this far below the ship by the end of the climb, and
+// slides off astern-to-port as the ship pulls away.
+const CLIMB = { drop: 45, slide: 14 };
+
+// Which role works in which room, for painting the rooms in role colours.
+const ROOM_ROLE = { engine: 'mechanic', power: 'engineer', helm: 'pilot' };
+
+// Repaint everything that wears a role colour: room stripes and floors,
+// and the lockers (whose "Off" colour is whatever they were built with).
+export function applyRolePalette(world, palette, isDefault) {
+  for (const room of ROOMS) {
+    const mats = world.roomMaterials?.[room.id];
+    if (!mats) continue;
+    const color = isDefault ? room.color : palette[ROOM_ROLE[room.id]];
+    mats.accent.color.set(color);
+    if (isDefault) mats.inlay.color.set(room.floor);
+    else mats.inlay.color.set(color).multiplyScalar(0.55);
+  }
+  for (const locker of world.lockers ?? []) {
+    const { baseColor, takes } = locker.userData;
+    if (!baseColor) continue;
+    locker.userData.freeColor.copy(isDefault ? baseColor : new THREE.Color(palette[takes]));
+    locker.userData.darkColor.copy(locker.userData.freeColor).multiplyScalar(0.35);
+  }
+}
+
 // Draw the ship and the dock the way the state says they are.
 export function applyState(world, state, localAtWheel = false) {
   world.tubes.forEach((tube, i) => {
@@ -233,6 +278,9 @@ export function applyState(world, state, localAtWheel = false) {
     tube.scale.y = height;
     tube.position.y = height / 2;
   });
+  // A lever says whether it will place a spare unit or steal one.
+  const leverLabel = state.spare > 0 ? `Power up (${state.spare} spare)` : 'Power up';
+  for (const lever of world.levers ?? []) lever.userData.interact.label = leverLabel;
   // A breach is drawn while it is open; patching it closes the hole.
   // The prompt goes with it, so a mended spot cannot be patched twice.
   for (const [id, mesh] of Object.entries(world.breaches)) {
@@ -256,9 +304,15 @@ export function applyState(world, state, localAtWheel = false) {
   world.wheelDisc.rotation.y = state.steering * 2.2;
   world.wheelMount.userData.interact.label = localAtWheel ? 'Leave the wheel' : 'Take the wheel';
 
+  // The dock is ship-space scenery, so the ship climbing is drawn as the
+  // dock falling away beneath it. It vanishes once lost in the clouds.
   const atDock = state.phase === 'lobby';
-  world.dock.visible = atDock;
-  world.hatch.visible = !atDock;
+  const climbed = takeoffProgress(state);
+  world.dock.visible = atDock || state.phase === 'takeoff';
+  world.dock.position.set(-climbed * CLIMB.slide, -climbed * CLIMB.drop, -climbed * CLIMB.slide * 0.5);
+  // The cargo door stays open on the way up so the crew can watch the
+  // dock drop away (the hatch's collider already bars it), then slams.
+  world.hatch.visible = !atDock && !(state.phase === 'takeoff' && !hatchShut(state));
 
   // A taken locker goes dark and wears its owner's name.
   for (const locker of world.lockers) {
@@ -436,6 +490,7 @@ function buildDock(ship, box) {
     const locker = add(box(1, 1.8, 0.6), material, spec.x, DOCK.top + 0.9, DOCK.zFar + 1.2, true);
     locker.name = `locker-${spec.role}`;
     locker.userData.takes = spec.role;
+    locker.userData.baseColor = new THREE.Color(spec.color); // the palette "Off" colour
     locker.userData.freeColor = new THREE.Color(spec.color);
     locker.userData.darkColor = new THREE.Color(spec.color).multiplyScalar(0.35);
     locker.userData.freeInteract = {

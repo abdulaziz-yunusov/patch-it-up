@@ -1,6 +1,5 @@
 // Home page: the name field (kept between visits) and the four buttons.
 
-import { showScreen } from './screens.js';
 import { load, save } from './save.js';
 
 const DEFAULT_NAME = 'Deckhand';
@@ -9,51 +8,63 @@ export function playerName() {
   return load().name?.trim() || DEFAULT_NAME;
 }
 
-// onHost() opens a room, onJoin(code) connects to one.
-export function initMenu({ onHost, onJoin }) {
+// The name may change elsewhere (the host's crew screen): show it again.
+export function refreshNameChip() {
+  document.getElementById('nameShown').textContent = playerName();
+  document.getElementById('playerName').value = load().name ?? '';
+}
+
+// onHost() opens a room, onJoin() opens the Join a game screen,
+// onSettings() opens the settings.
+export function initMenu({ onHost, onJoin, onSettings }) {
   const nameInput = document.getElementById('playerName');
-  const codeInput = document.getElementById('roomCode');
-  const joinError = document.getElementById('joinError');
   const menuNote = document.getElementById('menuNote');
 
-  nameInput.value = load().name ?? '';
+  // "Playing as Deckhand ✎" in the corner: click it to type a new name.
+  // Enter or clicking away keeps it, Esc puts the old one back.
+  const nameChip = document.getElementById('nameChip');
+  const nameShown = document.getElementById('nameShown');
+  const nameEdit = nameInput.closest('.name-edit');
+  let nameBefore = '';
+
+  refreshNameChip();
+
+  nameChip.addEventListener('click', () => {
+    nameBefore = nameInput.value;
+    nameChip.hidden = true;
+    nameEdit.hidden = false;
+    nameInput.focus();
+    nameInput.select();
+  });
   nameInput.addEventListener('input', () => save({ ...load(), name: nameInput.value.trim() }));
+  nameInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      nameInput.value = nameBefore;
+      save({ ...load(), name: nameBefore.trim() });
+    }
+    if (e.key === 'Enter' || e.key === 'Escape') nameInput.blur();
+  });
+  nameInput.addEventListener('blur', () => {
+    nameShown.textContent = playerName();
+    nameEdit.hidden = true;
+    nameChip.hidden = false;
+  });
 
   document.getElementById('hostGame').addEventListener('click', () => onHost());
 
   document.getElementById('joinGame').addEventListener('click', () => {
-    joinError.hidden = true;
-    showScreen('join');
-    codeInput.focus();
+    menuNote.hidden = true;
+    onJoin();
+  });
+
+  document.getElementById('settings').addEventListener('click', () => {
+    menuNote.hidden = true;
+    onSettings();
   });
 
   // On the page, not in an alert box: a desktop build has no browser dialogs.
-  for (const id of ['training', 'settings']) {
-    document.getElementById(id).addEventListener('click', () => {
-      menuNote.textContent = `${id[0].toUpperCase()}${id.slice(1)} is coming soon`;
-      menuNote.hidden = false;
-    });
-  }
-
-  // Room codes are always upper case, so typing is forgiving.
-  codeInput.addEventListener('input', () => {
-    codeInput.value = codeInput.value.toUpperCase();
-    joinError.hidden = true;
+  document.getElementById('training').addEventListener('click', () => {
+    menuNote.textContent = 'Training is coming soon';
+    menuNote.hidden = false;
   });
-  codeInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') climbAboard();
-  });
-
-  document.getElementById('climbAboard').addEventListener('click', climbAboard);
-  document.getElementById('joinBack').addEventListener('click', () => showScreen('menu'));
-
-  function climbAboard() {
-    const code = codeInput.value.trim();
-    if (!code) {
-      joinError.textContent = 'Enter a room code';
-      joinError.hidden = false;
-      return;
-    }
-    onJoin(code);
-  }
 }

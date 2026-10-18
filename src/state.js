@@ -9,6 +9,8 @@ export const RULES = {
   roundSeconds: 180,
   altitudeStart: 100,
   altitudeLossPerBreach: 2, // per cent per second, per open breach
+  sinkRate: 1, // per cent per second the ship sinks with no lift at all
+  liftPerUnit: 0.5, // per cent per second each unit in the lift tube gives back
   breachEvery: [8, 15], // seconds between new breaches
   rockEvery: 10, // seconds between rocks
   rockDistance: 42, // metres ahead when one appears
@@ -18,6 +20,13 @@ export const RULES = {
   enginesLow: 1, // engines at 0 or 1 halve the pilot's steering
   driftRate: 0.55, // how fast a full helm slides the ship aside
 
+  // The furnace: its heat sets how many power units the engineer has.
+  heatStart: 0.75, // 6 of 8 units: the 2-2-2 the ship casts off with
+  heatDecay: 1 / 50, // a full furnace burns down to nothing in 50 s
+  heatPerStoke: 0.2,
+  stokeSeconds: 1, // hold E at the furnace this long for one shovel of coal
+  maxUnits: 8, // power units a roaring furnace makes
+
   maxPerTube: 4,
   patchSeconds: 2.5,
   steerRate: 0.9,
@@ -26,7 +35,9 @@ export const RULES = {
   inputHz: 30, // joiner -> host
   stateHz: 20, // host -> all
   timeoutMs: 5000, // silence this long means that browser is gone
+  weakSignalMs: 1000, // silence this long shows them as lagging on the crew screen
   countdown: 5, // seconds on the deck before the ship casts off
+  takeoffSeconds: 7, // the climb away from the dock, before the round starts
   correction: 0.25, // how hard your own sphere is pulled to the host's answer
 
   // The dock's toys.
@@ -59,7 +70,8 @@ export const propHomes = {};
 
 export const ROLES = ['mechanic', 'engineer', 'pilot'];
 
-// What each power tube feeds. Lift has no rule of its own yet.
+// What each power tube feeds: engines steer, shields turn rocks aside,
+// lift holds the ship up against the sink and the leaks.
 export const TUBES = ['engines', 'shields', 'lift'];
 
 // On the Blender dock (public/models/waiting_room.glb), at its spawn_1..3
@@ -74,11 +86,17 @@ export const SPAWN_YAW = -Math.PI / 2;
 export const KIT_HOME = { x: -6.6, y: 0.15, z: 1.6 };
 
 export const state = {
-  phase: 'lobby', // 'lobby' at the dock, 'flight' in the air, 'result' after
+  // 'gathering' on the host's crew screen, 'lobby' at the dock, 'takeoff'
+  // climbing away, 'flight' in the air, 'result' after
+  phase: 'lobby',
+  takeoff: 0, // seconds into the climb, while phase is 'takeoff'
   countdown: null, // seconds left once the whole crew is aboard
   code: '', // the room code, painted on the board at the dock
   players: {}, // id -> { id, name, role, x, y, z, yaw, atWheel }
   power: [2, 2, 2], // units in the engine, shield and lift tubes
+  spare: 0, // units the furnace has made that no tube holds yet
+  heat: RULES.heatStart, // the furnace, 0 (out) .. 1 (roaring)
+  climb: 0, // per cent per second altitude is changing, for the HUD
   breaches: {}, // id -> true while that hole is open
   opened: 0, // how many have torn open all round: clients flash on a change
   patched: 0, // and how many the mechanic has closed
@@ -116,6 +134,7 @@ export function newPlayer(id, name, index) {
     yaw: SPAWN_YAW, // on the dock you arrive facing the lockers
     atWheel: false,
     hat: 0, // index into HATS, changed at the mirror
+    signal: 'good', // 'weak' when the host has not heard from them lately
   };
 }
 
@@ -123,9 +142,13 @@ export function snapshot() {
   return {
     phase: state.phase,
     countdown: state.countdown,
+    takeoff: state.takeoff,
     code: state.code,
     players: state.players,
     power: state.power,
+    spare: state.spare,
+    heat: state.heat,
+    climb: state.climb,
     breaches: state.breaches,
     opened: state.opened,
     patched: state.patched,
@@ -150,9 +173,13 @@ export function snapshot() {
 export function applySnapshot(s) {
   state.phase = s.phase ?? state.phase;
   state.countdown = s.countdown ?? null;
+  state.takeoff = s.takeoff ?? 0;
   state.code = s.code ?? state.code;
   state.players = s.players ?? {};
   state.power = s.power ?? state.power;
+  state.spare = s.spare ?? state.spare;
+  state.heat = s.heat ?? state.heat;
+  state.climb = s.climb ?? 0;
   state.breaches = s.breaches ?? state.breaches;
   state.opened = s.opened ?? state.opened;
   state.patched = s.patched ?? state.patched;

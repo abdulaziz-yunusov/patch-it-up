@@ -17,6 +17,7 @@
 
 import * as THREE from 'three';
 import { RULES, ROUTES } from './state.js';
+import { settings } from './settings.js';
 import { play } from './sound.js';
 import { toast } from './dock.js';
 import { loadRoom, pivotAt } from './rooms.js';
@@ -24,7 +25,7 @@ import { loadRoom, pivotAt } from './rooms.js';
 const STATIONS = {
   bell: { label: 'Ring the cabin bell', action: 'cabinBell' },
   map: { label: 'Read the map', action: 'map' },
-  telescope: { label: 'Look out (hold E)', action: 'telescope' },
+  telescope: { label: 'Look out (hold)', action: 'telescope' },
 };
 
 export async function loadHelmModel(world) {
@@ -59,7 +60,6 @@ export async function loadHelmModel(world) {
 const seen = { cabinBell: null };
 let swingUntil = 0;
 let mapWasDown = false;
-let baseFov = null;
 let zooming = false;
 
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -73,7 +73,7 @@ export function updateHelm(world, state, { camera, view, player, now, dt }) {
   if (altitude) altitude.rotation.x = lerp(-2.2, 2.2, THREE.MathUtils.clamp(state.altitude / RULES.altitudeStart, 0, 1));
   if (speed) {
     const engines = state.power[0] / RULES.maxPerTube;
-    const shake = state.phase === 'flight' ? Math.sin(now / 60) * 0.04 : 0;
+    const shake = state.phase !== 'lobby' ? Math.sin(now / 60) * 0.04 : 0;
     speed.rotation.x = lerp(-2.2, 2.2, engines) + shake;
   }
   if (heading) heading.rotation.y = -state.steering * 0.9 + Math.sin(now / 900) * 0.05;
@@ -106,7 +106,7 @@ export function updateHelm(world, state, { camera, view, player, now, dt }) {
   // The map and the telescope only change what this player sees, so they
   // never go through the host.
   const aim = view.target?.userData.interact;
-  const eDown = !!player.keys.KeyE && player.controls.isLocked;
+  const eDown = player.isDown('interact') && player.controls.isLocked;
   if (aim?.action === 'map' && eDown && !mapWasDown) {
     const route = ROUTES[state.route] ?? ROUTES[0];
     const where = state.phase === 'flight'
@@ -117,8 +117,9 @@ export function updateHelm(world, state, { camera, view, player, now, dt }) {
   }
   mapWasDown = aim?.action === 'map' && eDown;
 
-  if (baseFov === null) baseFov = camera.fov;
-  // Start on the telescope, then keep holding E and turn to the window.
+  // Start on the telescope, then keep holding the key and turn to the
+  // window. Without it the view eases back to the field of view setting.
+  const baseFov = settings.fov;
   zooming = eDown && (zooming || aim?.action === 'telescope');
   const target = zooming ? baseFov * 0.35 : baseFov;
   if (Math.abs(camera.fov - target) > 0.05) {

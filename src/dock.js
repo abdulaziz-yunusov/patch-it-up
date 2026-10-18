@@ -112,6 +112,7 @@ export async function loadDockModel(world) {
     const locker = model.getObjectByName(`locker_${role}`);
     const free = locker.material.color.clone();
     locker.userData.takes = role;
+    locker.userData.baseColor = free.clone(); // the palette "Off" colour
     locker.userData.freeColor = free;
     locker.userData.darkColor = free.clone().multiplyScalar(0.35);
     locker.userData.freeInteract = { label: `Take the ${role} uniform`, action: 'role', takes: role };

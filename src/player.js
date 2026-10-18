@@ -3,6 +3,8 @@
 
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
+import { settings } from './settings.js';
+import { setRoleBadge } from './roleLook.js';
 
 export const PLAYER = {
   radius: 0.4,
@@ -12,6 +14,7 @@ export const PLAYER = {
   gravity: 14,
 };
 
+// Swapped in place by main.js when the colour-blind palette changes.
 export const ROLE_COLORS = {
   mechanic: '#e2574c',
   engineer: '#49b97a',
@@ -19,7 +22,14 @@ export const ROLE_COLORS = {
   crew: '#d9d2c5', // before a role is picked
 };
 
-const ONE_SHOT = ['KeyE']; // roles come from the lockers now, not the keyboard
+// Mouse look: radians per pixel at sensitivity 50. The slider doubles or
+// halves it every 25 steps, so 0..100 spans a quarter to four times.
+const LOOK_SPEED = 0.002;
+const lookScale = () => 2 ** ((settings.sensitivity - 50) / 25);
+const PITCH_LIMIT = Math.PI / 2 - 0.01;
+
+// Head bob: one dip per footstep, about 2.8 steps a second at full speed.
+const BOB = { perMetre: 2.2, height: 0.035, sway: 0.022 };
 
 // A sphere with two eyes, so the others can tell which way you face.
 export function createPlayerMesh(color = ROLE_COLORS.crew) {
@@ -163,25 +173,51 @@ export class LocalPlayer {
     this.camera = camera;
     this.colliders = colliders;
     this.body = createBody();
+    // Held keys and mouse buttons by code (KeyW, Mouse2), and the ones
+    // pressed since the last input was read. Only while the mouse is
+    // captured: typing a name or rebinding a key must not walk you around.
     this.keys = {};
-    this.taps = new Set(); // keys pressed since the last input was read
-    this.dropRequested = false;
+    this.taps = new Set();
+    this.bob = { phase: 0, amount: 0, x: 0, z: 0 };
 
+    // The controls only capture the mouse; turning is done below, so the
+    // sensitivity and invert settings apply.
     this.controls = new PointerLockControls(camera, document.body);
+    this.controls.pointerSpeed = 0;
     this.controls.addEventListener('unlock', () => {
       this.keys = {};
       this.taps.clear();
     });
 
+    addEventListener('mousemove', (e) => {
+      if (!this.controls.isLocked) return;
+      const speed = LOOK_SPEED * lookScale();
+      const camera = this.camera;
+      camera.rotation.y -= e.movementX * speed;
+      camera.rotation.x -= e.movementY * speed * (settings.invertY ? -1 : 1);
+      camera.rotation.x = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, camera.rotation.x));
+    });
+
+    const press = (code, repeat) => {
+      this.keys[code] = true;
+      if (!repeat) this.taps.add(code);
+    };
     addEventListener('keydown', (e) => {
-      this.keys[e.code] = true;
-      if (!e.repeat && ONE_SHOT.includes(e.code)) this.taps.add(e.code);
-      if (e.code === 'Space' && this.controls.isLocked) e.preventDefault();
+      if (!this.controls.isLocked) return;
+      press(e.code, e.repeat);
+      // A bound key must not also scroll the page or move browser focus.
+      if (Object.values(settings.keys).includes(e.code)) e.preventDefault();
     });
     addEventListener('keyup', (e) => (this.keys[e.code] = false));
     addEventListener('mousedown', (e) => {
-      if (e.button === 2 && this.controls.isLocked) this.dropRequested = true;
+      if (this.controls.isLocked) press(`Mouse${e.button}`, false);
     });
+    addEventListener('mouseup', (e) => (this.keys[`Mouse${e.button}`] = false));
+  }
+
+  // Is the key bound to this action held down right now?
+  isDown(action) {
+    return !!this.keys[settings.keys[action]];
   }
 
   // Step into the world at a spot in ship space, camera parented to the ship.
@@ -205,24 +241,27 @@ export class LocalPlayer {
   }
 
   // What this browser sends the host, 30 times a second.
+  // The host only ever sees KeyW/KeyA/KeyS/KeyD/Space, whatever the
+  // player has bound them to, so rebinding needs nothing from the host.
   readInput() {
+    const bound = settings.keys;
     const input = {
       keys: {
-        KeyW: !!this.keys.KeyW,
-        KeyA: !!this.keys.KeyA,
-        KeyS: !!this.keys.KeyS,
-        KeyD: !!this.keys.KeyD,
-        Space: !!this.keys.Space,
+        KeyW: this.isDown('forward'),
+        KeyA: this.isDown('left'),
+        KeyS: this.isDown('back'),
+        KeyD: this.isDown('right'),
+        Space: this.isDown('jump'),
       },
       yaw: this.camera.rotation.y,
       pitch: this.camera.rotation.x,
-      use: !!this.keys.KeyE,
+      use: this.isDown('interact'),
       // A tap can start and end between two frames, let alone two packets.
-      useTap: this.taps.has('KeyE'),
-      drop: this.dropRequested,
+      useTap: this.taps.has(bound.interact),
+      drop: this.taps.has(bound.drop),
+      bell: this.taps.has(bound.bell),
     };
     this.taps.clear();
-    this.dropRequested = false;
     return input;
   }
 
@@ -244,9 +283,27 @@ export class LocalPlayer {
     this.syncView();
   }
 
+  // The camera sits at eye height, dipping and swaying a little with each
+  // step while you walk (unless head bob is off in the settings).
   syncView() {
     const { position } = this.body;
-    this.camera.position.set(position.x, position.y + PLAYER.eyeHeight - PLAYER.radius, position.z);
+    const bob = this.bob;
+    const moved = Math.hypot(position.x - bob.x, position.z - bob.z);
+    bob.x = position.x;
+    bob.z = position.z;
+    const walking = settings.headBob && this.body.onGround && moved > 0.001 && moved < 0.5;
+    if (walking) bob.phase += moved * BOB.perMetre * Math.PI;
+    bob.amount += ((walking ? 1 : 0) - bob.amount) * 0.12;
+    if (!settings.headBob) bob.amount = 0;
+
+    const dip = Math.sin(bob.phase * 2) * BOB.height * bob.amount;
+    const sway = Math.sin(bob.phase) * BOB.sway * bob.amount;
+    const yaw = this.camera.rotation.y;
+    this.camera.position.set(
+      position.x + Math.cos(yaw) * sway,
+      position.y + PLAYER.eyeHeight - PLAYER.radius + dip,
+      position.z - Math.sin(yaw) * sway
+    );
   }
 }
 
@@ -268,8 +325,10 @@ export class RemoteCrew {
       if (player.id === localId) continue;
       if (!this.crew.has(player.id)) this.add(player);
       const entry = this.crew.get(player.id);
-      entry.mesh.userData.sphere.material.color.set(ROLE_COLORS[player.role] ?? ROLE_COLORS.crew);
+      const color = ROLE_COLORS[player.role] ?? ROLE_COLORS.crew;
+      entry.mesh.userData.sphere.material.color.set(color);
       setHat(entry.mesh, player.hat ?? 0);
+      setRoleBadge(entry.mesh, player.role, color, settings.roleSymbols);
     }
   }
 

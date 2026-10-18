@@ -9,7 +9,9 @@
 //   piston_0..2  pump up and down, faster with more engine power
 //   flywheel     spins with the engine
 //   rpm          the gauge on the engine's front
-// station_furnace: anyone can stoke it; the fire flares for the whole crew.
+// station_furnace: the mechanic stokes it (hold E). In flight its heat is
+// the ship's power budget, so the fire burns brighter or dimmer with it;
+// every stoke flares for the whole crew.
 
 import * as THREE from 'three';
 import { RULES } from './state.js';
@@ -17,7 +19,7 @@ import { play } from './sound.js';
 import { loadRoom } from './rooms.js';
 
 const STATIONS = {
-  stoke: { label: 'Stoke the furnace', action: 'stoke' },
+  stoke: { label: 'Stoke the furnace', action: 'stoke', role: 'mechanic', hold: RULES.stokeSeconds },
 };
 
 const SPARKS = 10;
@@ -87,9 +89,9 @@ export function updateEngineRoom(world, state, { now, dt }) {
   const room = world.engineRoom;
   if (!room) return;
 
-  // In flight the engine runs with its power; at the dock it ticks over.
+  // Once cast off the engine runs with its power; at the dock it ticks over.
   const engines = state.power[0] / RULES.maxPerTube;
-  const speed = state.phase === 'flight' ? 2 + engines * 10 : 1.5;
+  const speed = state.phase !== 'lobby' ? 2 + engines * 10 : 1.5;
   room.phase += speed * dt;
 
   room.pistons.forEach((p, i) => {
@@ -97,7 +99,7 @@ export function updateEngineRoom(world, state, { now, dt }) {
   });
   if (room.flywheel) room.flywheel.rotation.x = room.phase;
   if (room.rpm) {
-    const target = state.phase === 'flight' ? 2.2 - engines * 4.4 : 1.8; // low on the left
+    const target = state.phase !== 'lobby' ? 2.2 - engines * 4.4 : 1.8; // low on the left
     room.rpm.rotation.z += (target + Math.sin(now / 70) * 0.03 - room.rpm.rotation.z) * Math.min(1, dt * 3);
   }
 
@@ -112,10 +114,12 @@ export function updateEngineRoom(world, state, { now, dt }) {
   const age = (now - stokedAt) / FLARE_MS;
   const flare = age >= 0 && age < 1 ? 1 - age : 0;
 
-  // The fire always flickers a little; a stoke makes it roar.
+  // The fire always flickers a little; a stoke makes it roar. Once cast off it
+  // dims as the heat burns down, so the mechanic can read it at a glance.
   const flicker = 0.8 + Math.sin(now / 53) * 0.15 + Math.sin(now / 131) * 0.1;
-  if (room.glow) room.glow.material.emissiveIntensity = (1.2 + flare * 4) * flicker;
-  if (room.fireLight) room.fireLight.intensity = (1.2 + flare * 5) * flicker;
+  const burn = state.phase !== 'lobby' ? 0.2 + state.heat * 1.4 : 1.2;
+  if (room.glow) room.glow.material.emissiveIntensity = (burn + flare * 4) * flicker;
+  if (room.fireLight) room.fireLight.intensity = (burn + flare * 5) * flicker;
 
   room.sparks.forEach((spark, i) => {
     const t = age * 1.4 - i * 0.03;

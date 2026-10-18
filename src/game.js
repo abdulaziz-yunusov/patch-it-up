@@ -53,8 +53,11 @@ export function ventSteam() {
   return true;
 }
 
+// At the dock it only makes the fire roar; in flight a shovel of coal
+// is what keeps the engineer's power coming.
 export function stokeFurnace() {
   state.stoke += 1;
+  if (state.phase === 'flight') state.heat = Math.min(1, state.heat + RULES.heatPerStoke);
   return true;
 }
 
@@ -164,9 +167,15 @@ function openBreach() {
   return true;
 }
 
-// E on a lever pulls one unit over from the fullest other tube.
+// E on a lever takes a spare unit if the furnace has made one, and
+// otherwise pulls one over from the fullest other tube.
 export function movePower(index) {
   if (state.power[index] >= RULES.maxPerTube) return false;
+  if (state.spare > 0) {
+    state.spare -= 1;
+    state.power[index] += 1;
+    return true;
+  }
   let from = -1;
   state.power.forEach((units, i) => {
     if (i !== index && units > 0 && (from === -1 || units > state.power[from])) from = i;
@@ -236,6 +245,9 @@ export function startRound() {
   state.opened = 0;
   state.patched = 0;
   state.power = [2, 2, 2];
+  state.spare = 0;
+  state.heat = RULES.heatStart;
+  state.climb = 0;
   state.steering = 0;
   state.drift = 0;
   state.rock = { lane: 0, distance: 0, active: false };
@@ -255,15 +267,20 @@ export function tickFlight(dt) {
     nextBreachIn = between(route().breachEvery);
   }
 
-  // Every open hole bleeds height away.
-  const leaking = openCount();
-  if (leaking > 0) {
-    state.altitude = Math.max(0, state.altitude - leaking * RULES.altitudeLossPerBreach * dt);
-  }
+  tickFurnace(dt);
 
-  // The helm answers slowly when the engines are starved.
+  // The ship always sinks a little, and every open hole bleeds more
+  // height away; only the lift tube gives it back.
+  state.climb =
+    state.power[2] * RULES.liftPerUnit -
+    RULES.sinkRate -
+    openCount() * RULES.altitudeLossPerBreach;
+  state.altitude = clamp(state.altitude + state.climb * dt, 0, RULES.altitudeStart);
+
+  // The helm answers slowly when the engines are starved, and barely at
+  // all when they are dead.
   const engines = state.power[0];
-  const answer = engines <= RULES.enginesLow ? 0.5 : 1;
+  const answer = engines === 0 ? 0.25 : engines <= RULES.enginesLow ? 0.5 : 1;
   state.drift = clamp(state.drift + state.steering * RULES.driftRate * answer * dt, -1, 1);
 
   nextRockIn -= dt;
@@ -282,6 +299,28 @@ export function tickFlight(dt) {
 
   if (state.altitude <= 0) endRound('down');
   else if (state.timeLeft <= 0) endRound('landed');
+}
+
+// The fire burns down; the power it makes follows. A dying fire takes
+// spare units first, then units out of the fullest tube. A fresh shovel
+// of coal hands new units to the spare pool for the engineer to place.
+function tickFurnace(dt) {
+  state.heat = Math.max(0, state.heat - RULES.heatDecay * dt);
+  const budget = Math.ceil(state.heat * RULES.maxUnits);
+  let total = state.spare + state.power.reduce((a, b) => a + b, 0);
+  while (total > budget) {
+    if (state.spare > 0) state.spare -= 1;
+    else state.power[fullestTube()] -= 1;
+    total -= 1;
+  }
+  state.spare += budget - total;
+}
+
+// The fullest tube; a tie goes to whichever the dice pick.
+function fullestTube() {
+  const most = Math.max(...state.power);
+  const tied = state.power.flatMap((units, i) => (units === most ? [i] : []));
+  return tied[Math.floor(Math.random() * tied.length)];
 }
 
 // Shields at three or more turn half the hits aside.
@@ -310,6 +349,14 @@ export function backToDock() {
   return true;
 }
 
+// The host leaves the crew screen: everyone walks onto the dock together.
+export function goToDock() {
+  if (state.phase !== 'gathering') return false;
+  state.phase = 'lobby';
+  state.countdown = null;
+  return true;
+}
+
 // At the dock: once the whole crew is dressed and standing on the deck,
 // count down and cast off. Anyone stepping back ashore stops the clock.
 export function tickLobby(dt) {
@@ -325,7 +372,26 @@ export function tickLobby(dt) {
   state.countdown = (state.countdown ?? RULES.countdown) - dt;
   if (state.countdown <= 0) {
     state.countdown = null;
-    startRound();
+    castOff();
+  }
+}
+
+// The hatch slams, the moorings go, and the dock drops away below. The
+// round is set up now so every gauge already reads right on the way up,
+// but nothing tears and no clock runs until the climb is over.
+function castOff() {
+  startRound();
+  state.phase = 'takeoff';
+  state.takeoff = 0;
+  state.stoke += 1; // the furnace roars and the bell rings for everyone
+  state.cabinBell += 1;
+}
+
+export function tickTakeoff(dt) {
+  if (state.phase !== 'takeoff') return;
+  state.takeoff += dt;
+  if (state.takeoff >= RULES.takeoffSeconds) {
+    state.takeoff = 0;
     state.phase = 'flight';
   }
 }
