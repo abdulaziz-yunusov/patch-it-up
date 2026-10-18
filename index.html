@@ -1,19 +1,65 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Patch It Up!</title>
-    <style>
-      html, body { margin: 0; height: 100%; overflow: hidden; background: #222846; font-family: system-ui, sans-serif; }
-      #start { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(20,24,48,0.6); }
-      #start button { padding: 24px 40px; font-size: 32px; font-weight: 800; border-radius: 18px; border: 5px solid #3b2516; background: #f2a33a; color: #2a1608; cursor: pointer; }
-      #hud { position: fixed; left: 16px; bottom: 16px; color: #fff4dc; font-weight: 700; }
-    </style>
+    <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <div id="start"><button type="button">Click to play</button></div>
-    <div id="hud">WASD move Â· mouse look Â· Esc to free the mouse</div>
+    <!-- One 3D canvas lives behind these screens; only one screen shows at a time. -->
+
+    <div id="menu" class="screen panel-screen">
+      <div class="panel">
+        <h1>Patch It Up!</h1>
+        <p class="tagline">Three friends, one leaky airship.</p>
+        <label class="field">
+          <span>Your name</span>
+          <input id="playerName" type="text" maxlength="12" placeholder="Deckhand" autocomplete="off" />
+        </label>
+        <div class="buttons">
+          <button id="hostGame" type="button" class="primary">Host game</button>
+          <button id="joinGame" type="button">Join game</button>
+          <button id="training" type="button">Training</button>
+          <button id="settings" type="button">Settings</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="join" class="screen panel-screen" hidden>
+      <div class="panel">
+        <h2>Join a ship</h2>
+        <label class="field">
+          <span>Room code</span>
+          <input id="roomCode" type="text" maxlength="8" placeholder="CRAB-7" autocomplete="off" />
+        </label>
+        <p id="joinError" class="error" hidden></p>
+        <div class="buttons">
+          <button id="climbAboard" type="button" class="primary">Climb aboard</button>
+          <button id="joinBack" type="button">Back</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="flight" class="screen" hidden>
+      <div id="hud">WASD move - mouse look - Esc to free the mouse</div>
+      <div id="lockOverlay">
+        <button id="clickToPlay" type="button" class="primary big">Click to play</button>
+        <button id="leaveShip" type="button">Leave ship</button>
+      </div>
+    </div>
+
+    <!-- Filled in by step 7 (win or crash). -->
+    <div id="result" class="screen panel-screen" hidden>
+      <div class="panel">
+        <h2 id="resultTitle">Landed!</h2>
+        <p id="resultDetail"></p>
+        <div class="buttons">
+          <button id="resultBack" type="button" class="primary">Back to dock</button>
+        </div>
+      </div>
+    </div>
+
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
