@@ -5,13 +5,13 @@
 
 import { ACTIONS, bindKey, isReserved, keyLabel, onSettingsChange, resetSettings, setSetting, settings } from './settings.js';
 import { play } from './sound.js';
+import { listMics, onVoiceChange, startMic } from './voice.js';
 
 const $ = (id) => document.getElementById(id);
 
 // Rows the Controls tab shows that cannot be rebound (yet).
 const FIXED_ROWS = [
   { label: 'Menu / free the mouse', key: 'Esc', note: 'Set by the browser' },
-  { label: 'Push-to-talk', key: 'V', note: 'Soon' },
   { label: 'Ping', key: 'Middle click', note: 'Soon' },
 ];
 
@@ -85,6 +85,30 @@ export function initSettings() {
   onSettingsChange(() => {
     if (isSettingsOpen()) drawAll();
   });
+  // A microphone plugged in, or allowed (only then do they have names).
+  onVoiceChange(() => {
+    if (isSettingsOpen()) fillMics();
+  });
+}
+
+// The microphone list: the system default, then each one by name. A chosen
+// one that is not plugged in stays in the list, so it is not lost.
+async function fillMics() {
+  const select = $('set-mic');
+  const mics = await listMics();
+  const options = [{ id: '', label: 'Default microphone' }, ...mics];
+  if (settings.micId && !mics.some((m) => m.id === settings.micId)) {
+    options.push({ id: settings.micId, label: 'Chosen microphone (not plugged in)' });
+  }
+  select.replaceChildren(
+    ...options.map(({ id, label }) => {
+      const option = document.createElement('option');
+      option.value = id;
+      option.textContent = label;
+      return option;
+    })
+  );
+  select.value = settings.micId;
 }
 
 export function openSettings(whenClosed = null) {
@@ -95,6 +119,7 @@ export function openSettings(whenClosed = null) {
   $('bindNote').textContent = '';
   overlay.hidden = false;
   drawAll();
+  fillMics();
   showTab(tab);
   $(`tab-${tab}`).focus();
 }
@@ -118,6 +143,8 @@ function showTab(name) {
   }
   for (const pane of overlay.querySelectorAll('.pane')) pane.hidden = pane.id !== `pane-${name}`;
   stopListening();
+  // The voice settings come with a mic test: the microphone has to be on.
+  if (name === 'audio') startMic();
 }
 
 // --- drawing the controls from the settings -------------------------------
@@ -126,12 +153,17 @@ function drawAll() {
   for (const input of overlay.querySelectorAll('[data-setting]')) {
     const value = settings[input.dataset.setting];
     if (input.type === 'checkbox') input.checked = value;
+    else if (input.type === 'radio') input.checked = input.value === value;
+    else if (input.tagName === 'SELECT' && ![...input.options].some((o) => o.value === String(value))) continue;
     else input.value = String(value);
     if (input.type === 'range') showValue(input);
   }
   // The strength slider only means something while shake is on.
   $('set-roll').disabled = !settings.cameraShake;
   $('rollRow').classList.toggle('soon', !settings.cameraShake);
+  // Sensitivity is for the open mic; push-to-talk sends while the key is held.
+  $('set-thr').disabled = settings.voiceMode === 'ptt';
+  $('sensRow').classList.toggle('soon', settings.voiceMode === 'ptt');
   drawBindings();
 }
 

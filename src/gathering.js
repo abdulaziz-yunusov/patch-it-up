@@ -77,7 +77,9 @@ export function resetGathering() {
   $('crewList').replaceChildren();
 }
 
-export function updateGathering(state, local, now) {
+// talking(id): whether that crew member is talking right now (a ring
+// round their picture).
+export function updateGathering(state, local, now, talking = () => false) {
   const players = Object.values(state.players);
   const host = state.players.host;
   const hostName = host?.name ?? 'The host';
@@ -128,6 +130,9 @@ export function updateGathering(state, local, now) {
     if (list.children[i]) list.children[i].replaceWith(row);
     else list.append(row);
   }
+  for (let i = 0; i < RULES.maxPlayers; i++) {
+    list.children[i]?.querySelector('.avatar')?.classList.toggle('speaking', !!crew[i] && talking(crew[i].id));
+  }
 }
 
 function crewRow(p, local, editable) {
@@ -147,12 +152,18 @@ function crewRow(p, local, editable) {
       ? 'Host · role picked at the dock'
       : me
         ? 'You · role picked at the dock'
-        : `Joined · ${p.signal === 'weak' ? 'weak' : 'good'} connection`;
+        : p.signal === 'lost'
+          ? 'Joined · connection dropped, waiting for them'
+          : `Joined · ${p.signal === 'weak' ? 'weak' : 'good'} connection`;
     who.append(el('div', 'crew-name', me ? `${p.name} (you)` : p.name), el('div', 'crew-sub', sub));
   }
 
-  const weak = p.signal === 'weak';
-  const badge = el('div', weak ? 'badge weak' : 'badge', weak ? 'Lagging' : 'Connected');
+  const badge =
+    p.signal === 'lost'
+      ? el('div', 'badge lost', 'Reconnecting')
+      : p.signal === 'weak'
+        ? el('div', 'badge weak', 'Lagging')
+        : el('div', 'badge', 'Connected');
   row.append(avatar, who, badge);
   return row;
 }

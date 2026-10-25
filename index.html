@@ -148,18 +148,19 @@
           </form>
 
           <div class="gather-col">
-            <section class="dark-card">
+            <section class="dark-card voice-check">
               <div class="card-label">Voice check</div>
               <div class="voice-row">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0" /><path d="M12 18v3" /></svg>
                 <div class="voice-text">
-                  <div>Voice chat comes in a later update</div>
-                  <div class="meter"><div></div></div>
+                  <div class="voice-status" role="status">Microphone off</div>
+                  <div class="meter"><div class="meter-fill"></div><i class="meter-gate"></i></div>
                 </div>
               </div>
+              <button type="button" class="small-btn voice-retry" hidden>Turn on microphone</button>
               <label class="check">
-                <input type="checkbox" disabled />
-                Push-to-talk (hold V)
+                <input type="checkbox" class="voice-ptt" />
+                <span>Push-to-talk (hold <span data-key="talk">V</span>)</span>
               </label>
             </section>
 
@@ -210,18 +211,19 @@
               <p class="code-hint"><span id="roomFullTag" class="full-tag" hidden>Room full</span><span id="gatherCodeHint"></span></p>
             </section>
 
-            <section class="dark-card">
+            <section class="dark-card voice-check">
               <div class="card-label">Voice check</div>
               <div class="voice-row">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0" /><path d="M12 18v3" /></svg>
                 <div class="voice-text">
-                  <div>Voice chat comes in a later update</div>
-                  <div class="meter"><div></div></div>
+                  <div class="voice-status" role="status">Microphone off</div>
+                  <div class="meter"><div class="meter-fill"></div><i class="meter-gate"></i></div>
                 </div>
               </div>
+              <button type="button" class="small-btn voice-retry" hidden>Turn on microphone</button>
               <label class="check">
-                <input type="checkbox" disabled />
-                Push-to-talk (hold V)
+                <input type="checkbox" class="voice-ptt" />
+                <span>Push-to-talk (hold <span data-key="talk">V</span>)</span>
               </label>
             </section>
           </div>
@@ -255,7 +257,12 @@
       <div id="status"></div>
       <div id="toast" hidden></div>
       <div id="subtitle" aria-live="polite" hidden></div>
-      <div id="callout" role="status" hidden><span id="calloutWho"></span><strong id="calloutText"></strong></div>
+      <!-- Voice: who is talking, who is muted, and your own mic. -->
+      <div id="voiceHud"></div>
+      <div id="topAlerts">
+        <div id="alert" role="alert" hidden><strong id="alertTitle"></strong><span id="alertText"></span></div>
+        <div id="callout" role="status" hidden><span id="calloutWho"></span><strong id="calloutText"></strong></div>
+      </div>
       <div id="lockOverlay">
         <button id="clickToPlay" type="button" class="primary big">Click to play</button>
         <button id="openSettings" type="button">Settings</button>
@@ -267,6 +274,7 @@
       <div id="banner"></div>
       <div class="hud">
         <span data-key="move">WASD</span> move · mouse look · <span data-key="interact">E</span> use · <span data-key="callout">Q</span> call out · Esc frees the mouse<br />
+        <span data-key="camera">C</span> third person · hold <span data-key="lookAround">Left Alt</span> to look at yourself · <span data-key="wave">G</span> wave · <span data-key="jump">Space</span> twice to fly, <span data-key="flyDown">Left Shift</span> down<br />
         Take a uniform from a locker, then up the gangplank. The ship leaves when all three are aboard.<br />
         Ring the bell, shout down the tube, try a hat at the mirror, kick the crates.
       </div>
@@ -279,7 +287,7 @@
         <div id="takeoffJob"></div>
       </div>
       <div class="hud">
-        <span data-key="move">WASD</span> move · mouse look · <span data-key="interact">E</span> use · <span data-key="drop">Right click</span> drop · <span data-key="callout">Q</span> call out · Esc frees the mouse
+        <span data-key="move">WASD</span> move · mouse look · <span data-key="interact">E</span> use · <span data-key="drop">Right click</span> drop · <span data-key="callout">Q</span> call out · <span data-key="camera">C</span> camera · Esc frees the mouse
       </div>
     </div>
 
@@ -316,9 +324,10 @@
         </div>
         <div class="panel-foot"><span id="budgetText">Budget 6</span><span id="budgetNote"></span></div>
         <div class="panel-foot supplies"><span id="plankText">Kit 3 planks</span><span id="fuseText">Fuses 3</span></div>
+        <div id="hazardRow" class="panel-foot hazard" hidden><span id="hazardText"></span></div>
       </div>
       <div class="hud">
-        <span data-key="move">WASD</span> move · mouse look · <span data-key="interact">E</span> use · <span data-key="drop">Right click</span> drop · <span data-key="callout">Q</span> call out · Esc frees the mouse
+        <span data-key="move">WASD</span> move · mouse look · <span data-key="interact">E</span> use · <span data-key="drop">Right click</span> drop · <span data-key="callout">Q</span> call out · <span data-key="camera">C</span> camera · Esc frees the mouse
       </div>
     </div>
 
@@ -389,29 +398,47 @@
                 <output class="set-value">50%</output>
               </div>
               <div class="set-divider"></div>
-              <div class="soon-box">
-                <p class="soon-note">Voice chat comes in a later update. These switch on with it.</p>
-                <div class="set-row soon">
-                  <label for="set-voices" class="set-label">Teammates' voices</label>
-                  <input id="set-voices" type="range" min="0" max="100" value="100" disabled />
-                  <output class="set-value">100%</output>
+              <div class="set-row">
+                <label for="set-voices" class="set-label">Teammates' voices</label>
+                <input id="set-voices" type="range" min="0" max="100" step="1" data-setting="voices" data-unit="%" />
+                <output for="set-voices" class="set-value"></output>
+              </div>
+              <div class="set-row">
+                <label for="set-mic" class="set-label grow">Microphone</label>
+                <select id="set-mic" class="set-select" data-setting="micId"><option value="">Default microphone</option></select>
+              </div>
+              <fieldset class="set-row">
+                <legend class="set-label">Voice mode</legend>
+                <div class="radio-row">
+                  <label><input type="radio" name="vmode" value="open" data-setting="voiceMode" />Open mic</label>
+                  <label><input type="radio" name="vmode" value="ptt" data-setting="voiceMode" />Push-to-talk (hold <span data-key="talk">V</span>)</label>
                 </div>
-                <div class="set-row soon">
-                  <label for="set-mic" class="set-label grow">Microphone</label>
-                  <select id="set-mic" class="set-select" disabled><option>Default microphone</option></select>
+              </fieldset>
+              <div id="sensRow" class="set-row">
+                <label for="set-thr" class="set-label">Mic sensitivity</label>
+                <input id="set-thr" type="range" min="0" max="100" step="1" data-setting="micSensitivity" data-unit="%" />
+                <output for="set-thr" class="set-value"></output>
+              </div>
+              <div class="set-row">
+                <div class="set-text">
+                  <span class="set-label">Mic test</span>
+                  <span id="micTestNote" class="set-sub">Speak: the bar turns green when the crew can hear you.</span>
                 </div>
-                <fieldset class="set-row soon" disabled>
-                  <legend class="set-label">Voice mode</legend>
-                  <div class="radio-row">
-                    <label><input type="radio" name="vmode" checked />Always on</label>
-                    <label><input type="radio" name="vmode" />Push-to-talk (V)</label>
-                  </div>
-                </fieldset>
-                <div class="set-row soon">
-                  <label for="set-thr" class="set-label">Mic sensitivity</label>
-                  <input id="set-thr" type="range" min="0" max="100" value="40" disabled />
-                  <output class="set-value">40%</output>
+                <div id="micTest" class="meter mic-test"><div class="meter-fill"></div><i class="meter-gate"></i></div>
+              </div>
+              <div class="set-row">
+                <div class="set-text">
+                  <label for="set-mute" class="set-label">Mute my microphone</label>
+                  <span class="set-sub">Or press <span data-key="mute">M</span> at any time.</span>
                 </div>
+                <input id="set-mute" type="checkbox" class="set-check" data-setting="micMuted" />
+              </div>
+              <div class="set-row">
+                <div class="set-text">
+                  <label for="set-voice3d" class="set-label">Voices from where people stand</label>
+                  <span class="set-sub">Left and right, near and far, muffled through bulkheads.</span>
+                </div>
+                <input id="set-voice3d" type="checkbox" class="set-check" data-setting="voice3d" />
               </div>
             </section>
 
@@ -534,6 +561,9 @@
 
     <!-- Frames per second, when the setting asks for it. -->
     <div id="fps" hidden></div>
+
+    <!-- The line to the host dropped: shown on any screen while we get back aboard. -->
+    <div id="netNote" role="status" hidden><span class="net-spinner" aria-hidden="true"></span>Connection lost · reconnecting…</div>
 
     <script type="module" src="/src/main.js"></script>
   </body>

@@ -12,13 +12,21 @@ const between = ([lo, hi]) => lo + Math.random() * (hi - lo);
 // next rock comes at the bow.
 let nextBreachIn = 0;
 let nextRockIn = 0;
+let nextStormIn = 0;
 
 const ROLE_NAMES = { mechanic: 'Mechanic', engineer: 'Engineer', pilot: 'Pilot' };
 const TUBE_NAMES = ['Engines', 'Shields', 'Lift'];
 const ROOM_OF = Object.fromEntries(BREACH_SPOTS.map((spot) => [spot.id, spot.room]));
 
 const holdsKit = (player) => state.kit.heldBy === player.id;
-const handsFull = (player) => holdsKit(player) || player.fuse;
+const handsFull = (player) => holdsKit(player) || player.fuse || player.bucket;
+
+// Fire: which room each station is in, what a room is called, and where a
+// fire can spread to (the rooms stand in a row: engine, power, helm).
+const ROOMS = ['engine', 'power', 'helm'];
+export const ROOM_LABEL = { engine: 'engine room', power: 'power room', helm: 'helm' };
+const STATION_ROOM = { stoke: 'engine', power: 'power', steam: 'power', wheel: 'helm' };
+const NEXT_ROOMS = { engine: ['power'], power: ['engine', 'helm'], helm: ['power'] };
 
 // Can this player use this station right now? null means yes; otherwise
 // the reason, which the prompt shows instead of the action. The host asks
@@ -27,19 +35,22 @@ const handsFull = (player) => holdsKit(player) || player.fuse;
 export function canUse(interact, player) {
   if (!player) return 'Not aboard';
   if (interact.role && interact.role !== player.role) return `${ROLE_NAMES[interact.role] ?? interact.role} only`;
+  const burning = STATION_ROOM[interact.action];
+  if (burning && state.fires[burning]) return `The ${ROOM_LABEL[burning]} is on fire!`;
   switch (interact.action) {
     case 'patch':
       if (!holdsKit(player)) return 'Needs the patch kit';
       if (state.kit.planks <= 0) return 'Kit is empty: restock at the supply rack';
       return null;
     case 'pickup':
-      return player.fuse ? 'Hands full: fit the fuse first' : null;
+      if (player.fuse) return 'Hands full: fit the fuse first';
+      return player.bucket ? 'Hands full: use the bucket first' : null;
     case 'restock':
       if (!holdsKit(player)) return 'Bring the patch kit here';
       return state.kit.planks >= RULES.kitPlanks ? 'The kit is full' : null;
     case 'takeFuse':
       if (player.fuse) return 'You already carry a fuse';
-      if (holdsKit(player)) return 'Hands full: drop the kit first';
+      if (handsFull(player)) return 'Hands full: drop what you carry';
       return state.fuses <= 0 ? 'No spare fuses left' : null;
     case 'power':
       if (state.blown[interact.index]) return `${TUBE_NAMES[interact.index]} fuse blown: tube locked`;
@@ -47,6 +58,12 @@ export function canUse(interact, player) {
     case 'fuse':
       if (!state.blown.some(Boolean)) return 'Every fuse is fine';
       return player.fuse ? null : 'Needs a spare fuse from the mechanic';
+    case 'takeBucket':
+      if (player.bucket) return 'You already carry a bucket';
+      return handsFull(player) ? 'Hands full: drop what you carry' : null;
+    case 'douse':
+      if (!state.fires[interact.room]) return 'The fire is out';
+      return player.bucket ? null : 'Needs water: buckets in the engine room';
     default:
       return null;
   }
@@ -58,6 +75,8 @@ export const ACTIONS = {
   restock: (interact, player) => restockKit(player),
   takeFuse: (interact, player) => takeFuse(player),
   fuse: (interact, player) => fitFuse(player),
+  takeBucket: (interact, player) => takeBucket(player),
+  douse: (interact, player) => douseFire(interact.room, player),
   power: (interact) => movePower(interact.index),
   wheel: (interact, player, body) => toggleWheel(player, body),
   pickup: (interact, player) => pickUpKit(player),
@@ -80,8 +99,11 @@ export function ringBell() {
   return true;
 }
 
+// In flight the cabin bell is the storm alarm: rung while a storm wall is
+// coming, it warns the whole crew to brace.
 export function ringCabinBell() {
   state.cabinBell += 1;
+  if (state.phase === 'flight' && state.storm.active) state.storm.warned = true;
   return true;
 }
 
@@ -93,11 +115,12 @@ export function ventSteam() {
   return true;
 }
 
-// At the dock it only makes the fire roar; in flight a shovel of coal
-// is what keeps the engineer's power coming.
+// At the dock it only makes the fire roar; from the climb on a shovel of
+// coal is what keeps the engineer's power coming (coal shovelled on the way
+// up is banked: the furnace only starts burning down once the round begins).
 export function stokeFurnace() {
   state.stoke += 1;
-  if (state.phase === 'flight') state.heat = Math.min(1, state.heat + RULES.heatPerStoke);
+  if (state.phase === 'takeoff' || state.phase === 'flight') state.heat = Math.min(1, state.heat + RULES.heatPerStoke);
   return true;
 }
 
@@ -221,6 +244,35 @@ export function fitFuse(player) {
   return true;
 }
 
+// A bucket of water from the rail in the engine room: empty hands only.
+export function takeBucket(player) {
+  if (canUse({ action: 'takeBucket' }, player)) return false;
+  player.bucket = true;
+  return true;
+}
+
+// Throw it on the fire: enough buckets and the room is safe again.
+export function douseFire(room, player) {
+  if (canUse({ action: 'douse', room }, player)) return false;
+  player.bucket = false;
+  const fire = state.fires[room];
+  fire.water += 1;
+  if (fire.water >= RULES.fireBuckets) state.fires[room] = null;
+  return true;
+}
+
+// A room catches fire (if it is not already burning).
+export function ignite(room) {
+  if (!ROOMS.includes(room) || state.fires[room]) return false;
+  state.fires[room] = { burn: 0, spread: 0, water: 0 };
+  if (room === 'helm') {
+    // Nobody can hold a burning wheel: the pilot lets go.
+    for (const player of Object.values(state.players)) player.atWheel = false;
+    state.steering = 0;
+  }
+  return true;
+}
+
 // Call-outs: one key, and what it says depends on who you are and what
 // is going on. Everyone sees it; a call-out every two seconds at most.
 const lastCallout = new Map();
@@ -240,14 +292,19 @@ export function callOut(player) {
 
 function calloutText(player) {
   const flying = state.phase === 'flight';
-  if (player.role === 'pilot') return flying && state.rock.active ? 'Need engines! Rock ahead!' : 'Need power!';
+  const fire = ROOMS.find((room) => state.fires[room]);
+  if (player.role === 'pilot') {
+    if (flying && state.storm.active) return 'Storm wall! Brace and raise the shields!';
+    return flying && state.rock.active ? 'Need engines! Rock ahead!' : 'Need power!';
+  }
+  if (fire && player.role !== 'mechanic') return `Fire in the ${ROOM_LABEL[fire]}!`;
   if (player.role === 'engineer') {
     if (state.blown.some(Boolean)) return 'Need a fuse!';
     if (flying && state.heat < 0.35) return 'Stoke the furnace!';
     if (Object.entries(state.breaches).some(([id, open]) => open && ROOM_OF[id] === 'power')) return 'Breach in the power room!';
     return 'Power is set!';
   }
-  if (player.role === 'mechanic') return 'On my way!';
+  if (player.role === 'mechanic') return fire ? 'Fetching water!' : 'On my way!';
   return 'Ahoy!';
 }
 
@@ -290,6 +347,7 @@ export function toggleWheel(player, body) {
   if (player.atWheel) {
     player.atWheel = false;
     body.atWheel = false;
+    state.steering = 0; // the wheel spins back to centre when let go
     return true;
   }
   if (Object.values(state.players).some((p) => p.atWheel)) return false;
@@ -306,7 +364,7 @@ export function steerShip(dt, keys) {
 }
 
 export function pickUpKit(player) {
-  if (state.kit.heldBy || player.fuse) return false;
+  if (state.kit.heldBy || player.fuse || player.bucket) return false;
   state.kit.heldBy = player.id;
   return true;
 }
@@ -314,6 +372,10 @@ export function pickUpKit(player) {
 // The drop key: a carried fuse goes back in its crate, the kit goes on
 // the floor in front of you.
 export function dropKit(player, body, yaw) {
+  if (player.bucket) {
+    player.bucket = false; // the water goes on the floor
+    return true;
+  }
   if (player.fuse) {
     player.fuse = false;
     state.fuses += 1;
@@ -363,13 +425,22 @@ export function startRound() {
   state.fuses = RULES.spareFuses;
   state.drain = 0;
   state.kit.planks = RULES.kitPlanks;
-  for (const player of Object.values(state.players)) player.fuse = false;
+  state.fires = { engine: null, power: null, helm: null };
+  state.storm = { active: false, left: 0, warned: false, hits: 0 };
+  for (const player of Object.values(state.players)) {
+    player.fuse = false;
+    player.bucket = false;
+    player.braced = false;
+  }
   nextBreachIn = between(route().breachEvery);
   nextRockIn = route().rockEvery;
+  nextStormIn = RULES.stormFirstAt + Math.random() * 15;
 }
 
-// Three minutes in the air: the clock, the holes, the helm, the rocks.
-export function tickFlight(dt) {
+// Three minutes in the air: the clock, the holes, the helm, the rocks,
+// fires and storm walls. crew gives the host's bodies and inputs, which a
+// storm wall needs to throw people about.
+export function tickFlight(dt, crew = {}) {
   if (state.phase !== 'flight') return;
   state.timeLeft = Math.max(0, state.timeLeft - dt);
 
@@ -381,6 +452,9 @@ export function tickFlight(dt) {
 
   tickFurnace(dt);
   tickTubes(dt);
+  tickFires(dt);
+  if (state.phase !== 'flight') return; // the fire took the ship
+  tickStorm(dt, crew);
 
   // The ship always sinks a little, and every open hole bleeds more
   // height away; only the lift tube gives it back.
@@ -456,16 +530,78 @@ function tickTubes(dt) {
     if (state.tubeHeat[i] >= RULES.overheatSeconds) {
       state.blown[i] = true;
       state.tubeHeat[i] = 0;
+      ignite('power'); // a fuse that blows throws sparks
     }
   }
 }
 
 export const tubeName = (i) => TUBE_NAMES[i];
 
-// Shields at three or more turn half the hits aside.
+// Shields at three or more turn half the hits aside. A rock that gets
+// through may also set the helm alight.
 function takeHit() {
   const shielded = livePower(1) >= RULES.shieldThreshold && Math.random() < 0.5;
-  if (!shielded) openBreach();
+  if (shielded) return;
+  openBreach();
+  if (Math.random() < RULES.rockFireChance) ignite('helm');
+}
+
+// Each fire spreads to a next-door room every 20 s it burns. All three
+// rooms alight and the ship is lost.
+function tickFires(dt) {
+  for (const room of ROOMS) {
+    const fire = state.fires[room];
+    if (!fire) continue;
+    fire.burn += dt;
+    fire.spread += dt;
+    if (fire.spread >= RULES.fireSpreadSeconds) {
+      fire.spread = 0;
+      const next = NEXT_ROOMS[room].filter((r) => !state.fires[r]);
+      if (next.length) ignite(next[Math.floor(Math.random() * next.length)]);
+    }
+  }
+  if (ROOMS.every((room) => state.fires[room])) endRound('burned');
+}
+
+// Storm walls: one comes every so often, and only the pilot can see it.
+// Ringing the bell warns the crew to brace. At impact the shields decide
+// the damage, and anyone not braced (holding interact, or at the wheel)
+// is thrown back and drops what they carry.
+function tickStorm(dt, crew) {
+  const storm = state.storm;
+  for (const player of Object.values(state.players)) {
+    const input = crew.inputs?.get(player.id);
+    player.braced = storm.active && (player.atWheel || !!input?.use);
+  }
+  if (!storm.active) {
+    nextStormIn -= dt;
+    if (nextStormIn <= 0) {
+      storm.active = true;
+      storm.left = RULES.stormWarnSeconds;
+      storm.warned = false;
+    }
+    return;
+  }
+  storm.left = Math.max(0, storm.left - dt);
+  if (storm.left > 0) return;
+
+  // Impact. The warning is over with it.
+  storm.active = false;
+  storm.warned = false;
+  storm.hits += 1;
+  nextStormIn = between(route().stormEvery);
+  const shields = livePower(1);
+  for (let i = 0; i < Math.max(0, RULES.stormSafeShields - shields); i++) openBreach();
+  if (shields < 2 && Math.random() < 0.5) ignite(ROOMS[Math.floor(Math.random() * ROOMS.length)]);
+  state.altitude = Math.max(0, state.altitude - RULES.stormAltitudeLoss);
+  for (const player of Object.values(state.players)) {
+    if (player.braced) continue;
+    const body = crew.bodies?.get(player.id);
+    if (!body) continue;
+    // Thrown towards the stern, and a little to one side.
+    body.push = { x: -RULES.stormPush, z: (Math.random() - 0.5) * RULES.stormPush, t: 0.45 };
+    dropKit(player, body, player.yaw ?? 0);
+  }
 }
 
 function endRound(result) {
@@ -497,13 +633,15 @@ export function goToDock() {
 }
 
 // At the dock: once the whole crew is dressed and standing on the deck,
-// count down and cast off. Anyone stepping back ashore stops the clock.
+// count down and cast off. Anyone stepping back ashore stops the clock, and
+// so does anyone whose line has dropped until they are back.
 export function tickLobby(dt) {
   if (state.phase !== 'lobby') return;
   tickProps(dt);
   const crew = Object.values(state.players);
   const ready =
-    crew.length === RULES.maxPlayers && crew.every((p) => p.role !== 'crew' && aboard(p));
+    crew.length === RULES.maxPlayers &&
+    crew.every((p) => p.role !== 'crew' && p.signal !== 'lost' && aboard(p));
   if (!ready) {
     state.countdown = null;
     return;
@@ -539,8 +677,10 @@ export function tickTakeoff(dt) {
 export function removePlayer(id, body) {
   const player = state.players[id];
   if (!player) return;
+  if (player.atWheel) state.steering = 0; // nobody left holding the wheel
   if (player.fuse) state.fuses += 1; // their fuse goes back in the crate
   player.fuse = false;
+  player.bucket = false;
   if (state.kit.heldBy === id && body) dropKit(player, body, player.yaw);
   else if (state.kit.heldBy === id) state.kit.heldBy = null;
   delete state.players[id];

@@ -71,7 +71,8 @@ export function setRoleBadge(playerMesh, role, color, show) {
     // Never a target: the host's look-rays have no camera, which a sprite
     // needs to be hit-tested, and nobody interacts with a badge anyway.
     badge.raycast = () => {};
-    badge.position.set(0, 1.05, 0); // clear of the tallest hat
+    // Clear of the tallest hat: over a sphere, or over a crew character's head.
+    badge.position.set(0, playerMesh.userData.badgeHeight ?? 1.05, 0);
     playerMesh.add(badge);
     playerMesh.userData.badge = badge;
   }

@@ -9,8 +9,9 @@
 //   piston_0..2  pump up and down, faster with more engine power
 //   flywheel     spins with the engine
 //   rpm          the gauge on the engine's front
-// The supply rack restocks the patch kit's planks; the big crate at the
-// stern holds the spare fuses the engineer's fuse box needs.
+// The supply rack restocks the patch kit's planks; the bucket rail gives
+// water for fires; the big crate at the stern holds the spare fuses the
+// engineer's fuse box needs.
 // station_furnace: the mechanic stokes it (hold E). In flight its heat is
 // the ship's power budget, so the fire burns brighter or dimmer with it;
 // every stoke flares for the whole crew.
@@ -44,8 +45,10 @@ export async function loadEngineModel(world) {
   // rack, and of the crate, points at one interact object.
   const restock = { label: 'Restock planks (hold)', action: 'restock', role: 'mechanic', hold: RULES.restockSeconds };
   const fuses = { label: 'Take a spare fuse', action: 'takeFuse', role: 'mechanic' };
+  const buckets = { label: 'Take a water bucket', action: 'takeBucket', role: 'mechanic' };
   model.traverse((obj) => {
     if (!obj.isMesh) return;
+    if (/^(fire_bucket|bucket_rail)/.test(obj.name)) obj.userData.interact = buckets;
     if (/^(supply_|col_supply)/.test(obj.name)) obj.userData.interact = restock;
     if (/^(crate_big|crate_top|crate_rope|col_crate_big)/.test(obj.name)) obj.userData.interact = fuses;
   });

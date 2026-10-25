@@ -2,14 +2,16 @@
 // joins the two halves of a session: the host simulating, everyone drawing.
 
 import * as THREE from 'three';
-import { buildShip, addLights, addSky, applyRolePalette, applyState, groundHeight, hatchShut, takeoffProgress } from './world.js';
+import { HELM_STANCE, SHIP, buildShip, addLights, addSky, applyRolePalette, applyState, groundHeight, hatchShut, takeoffProgress, updateHazards } from './world.js';
 import { loadDockModel, updateDock, resetDockEffects } from './dock.js';
 import { loadHelmModel, updateHelm, resetHelmEffects } from './helm.js';
 import { loadPowerModel, updatePower, resetPowerEffects } from './power.js';
 import { loadEngineModel, updateEngineRoom, resetEngineEffects } from './engine.js';
-import { LocalPlayer, ROLE_COLORS, RemoteCrew, createBody, stepBody } from './player.js';
+import { LocalPlayer, PLAYER, ROLE_COLORS, RemoteCrew, createBody, setHat, stepBody } from './player.js';
+import { loadCharacter, loadCrewRoles } from './character.js';
 import { InteractionView, HostInteractions } from './interact.js';
 import { Net, makeCode } from './network.js';
+import { startPulse } from './pulse.js';
 import { play } from './sound.js';
 import {
   RULES,
@@ -34,6 +36,9 @@ import { closeSettings, initSettings, isSettingsOpen, openSettings } from './set
 import { PALETTES, fillRoleKey, inkFor } from './roleLook.js';
 import { createRain } from './rain.js';
 import { resetSubtitles, updateSubtitles } from './subtitles.js';
+import { endVoice, handleSignal, hostLink, hostUnlink, initVoice, micState, startMic, stopMic, voiceStatus } from './voice.js';
+import { hasVoice, isSpeaking, outputRoute, placeVoices } from './audio.js';
+import { initVoiceUi, updateVoiceUi } from './voiceUi.js';
 
 // Graphics quality is the resolution the scene is drawn at: below the
 // screen's own on Low, up to a sharp screen's full detail on High.
@@ -68,6 +73,12 @@ loadEngineModel(world); // furnishes the mechanic's engine room
 
 const player = new LocalPlayer({ ship, camera, colliders: world.colliders });
 const crew = new RemoteCrew(ship, RULES.stateHz);
+// The crew characters (Blender, public/models): until both files load,
+// players are spheres; then everyone swaps to a deckhand, and to the
+// pilot's, mechanic's or engineer's outfit once that uniform is taken.
+Promise.all([loadCharacter(), loadCrewRoles()]).then(([gltf]) => {
+  if (gltf) crew.rebuild();
+});
 const view = new InteractionView({
   ship,
   camera,
@@ -92,10 +103,12 @@ const takeoffJob = document.getElementById('takeoffJob');
 const flash = document.getElementById('flash');
 const resultTitle = document.getElementById('resultTitle');
 const resultDetail = document.getElementById('resultDetail');
+const resultBack = document.getElementById('resultBack');
 const lockOverlay = document.getElementById('lockOverlay');
 const statusLine = document.getElementById('status');
 const banner = document.getElementById('banner');
 const menuNote = document.getElementById('menuNote');
+const netNote = document.getElementById('netNote');
 const KIT_INTERACT = world.kit.userData.interact;
 
 // True from the moment you host or join until you are back at the menu;
@@ -127,66 +140,189 @@ const emptyInput = () => ({
   bell: false,
   callout: false,
   again: false,
+  wave: false,
+  flyTap: false, // a double-tap of jump: take off, or land
 });
 
 // --- the host's side of a session ------------------------------------
 
-net.onHello = (name) => {
+// A page that is simply closed never gets to say goodbye, so the host
+// also watches for silence (below) and the joiner for a missing state.
+const lastHeard = new Map(); // host: player id -> when their last input came
+const lostAt = new Map(); // host: player id -> when their line went dead
+const seatTokens = new Map(); // host: player id -> the secret that gives that seat back
+const acks = new Map(); // host: player id -> { seq, at } of the newest input heard
+let lastStateAt = 0; // joiner: when the host last said anything
+
+const cleanName = (name) => String(name ?? '').trim().slice(0, 12) || 'Deckhand';
+const newToken = () =>
+  Array.from(crypto.getRandomValues(new Uint32Array(4)), (n) => n.toString(36)).join('');
+
+net.onHello = (name, token) => {
+  const now = performance.now();
+  // Coming back after a dropped line: the same seat, uniform, place and
+  // all, as long as the seat is still being held.
+  const returning = token && [...seatTokens].find(([id, t]) => t === token && state.players[id])?.[0];
+  if (returning) {
+    const seated = state.players[returning];
+    seated.signal = 'good';
+    lostAt.delete(returning);
+    lastHeard.set(returning, now);
+    acks.delete(returning);
+    inputs.set(returning, { ...emptyInput(), yaw: seated.yaw });
+    return { id: returning, token, snapshot: snapshot() };
+  }
+
   if (playerCount() >= RULES.maxPlayers) return null; // "Ship is full"
   // The first free seat: p1 leaving and someone new arriving must not
   // hand out a second p2.
   let index = 1;
   while (state.players[`p${index}`]) index += 1;
-  const seated = newPlayer(`p${index}`, name || 'Deckhand', index);
+  const seated = newPlayer(`p${index}`, cleanName(name), index);
+  // Late, with the dock already gone: in through the cargo door.
+  if (state.phase !== 'gathering' && state.phase !== 'lobby') {
+    seated.x = 0;
+    seated.y = PLAYER.radius;
+    seated.z = -SHIP.width / 2 + 1;
+  }
   state.players[seated.id] = seated;
   bodies.set(seated.id, createBody(seated.x, seated.y, seated.z));
   inputs.set(seated.id, emptyInput());
-  return { id: seated.id, snapshot: snapshot() };
+  lastHeard.set(seated.id, now);
+  const seatToken = newToken();
+  seatTokens.set(seated.id, seatToken);
+  return { id: seated.id, token: seatToken, snapshot: snapshot() };
 };
 
-// A page that is simply closed never gets to say goodbye, so the host
-// also watches for silence (below) and the joiner for a missing state.
-const lastHeard = new Map(); // host: player id -> when their last input came
-let lastStateAt = 0; // joiner: when the host last said anything
-
-net.onInput = (id, input) => {
-  inputs.set(id, { ...emptyInput(), ...input });
-  lastHeard.set(id, performance.now());
+// Only what an input may hold, whatever a browser sends. Presses (E, drop,
+// the bell...) are kept until a host tick has used them: two packets
+// landing in one frame must not lose the first one's tap.
+const PRESSES = ['useTap', 'drop', 'bell', 'callout', 'wave', 'flyTap'];
+const finite = (value, fallback) => (Number.isFinite(value) ? value : fallback);
+net.onInput = (id, raw) => {
+  if (!state.players[id] || !raw || typeof raw !== 'object') return;
+  const previous = inputs.get(id) ?? emptyInput();
+  const keys = raw.keys && typeof raw.keys === 'object' ? raw.keys : {};
+  const input = {
+    keys: {
+      KeyW: !!keys.KeyW,
+      KeyA: !!keys.KeyA,
+      KeyS: !!keys.KeyS,
+      KeyD: !!keys.KeyD,
+      Space: !!keys.Space,
+      Shift: !!keys.Shift,
+    },
+    yaw: finite(raw.yaw, previous.yaw),
+    pitch: Math.max(-1.6, Math.min(1.6, finite(raw.pitch, 0))),
+    use: !!raw.use,
+    again: false, // only the host sends the crew back to the dock
+  };
+  for (const press of PRESSES) input[press] = !!previous[press] || !!raw[press];
+  inputs.set(id, input);
+  // Their microphone, for everyone's voice list: on, muted, or none.
+  state.players[id].mic = ['on', 'muted', 'none'].includes(raw.mic) ? raw.mic : 'none';
+  const now = performance.now();
+  lastHeard.set(id, now);
+  if (Number.isFinite(raw.seq)) acks.set(id, { seq: raw.seq, at: now });
 };
 
 net.onLeave = (id) => dropPlayer(id);
+net.onDrop = (id) => holdSeat(id);
 
+// Gone for good: free what they held and give the seat up.
 function dropPlayer(id) {
   game.removePlayer(id, bodies.get(id));
   bodies.delete(id);
   inputs.delete(id);
   lastHeard.delete(id);
-  net.drop(id);
+  lostAt.delete(id);
+  seatTokens.delete(id);
+  acks.delete(id);
+  hostInteractions.holds.delete(id);
+  hostUnlink(id);
+  net.release(id, { bye: true });
+}
+
+// A line gone quiet or dead: the seat waits a while for its player to
+// reconnect, standing still meanwhile, before it is given up.
+function holdSeat(id) {
+  const seated = state.players[id];
+  if (!seated || seated.signal === 'lost') return;
+  seated.signal = 'lost';
+  lostAt.set(id, performance.now());
+  inputs.set(id, { ...emptyInput(), yaw: seated.yaw });
+  if (seated.atWheel) state.steering = 0; // nobody's hands on it: the wheel spins back to centre
+  hostInteractions.holds.delete(id);
+  hostUnlink(id);
+  net.release(id);
 }
 
 // --- a joiner's side -------------------------------------------------
 
-net.onState = (incoming) => {
-  lastStateAt = performance.now();
+// The host's clock is not ours. The quickest packet so far gives the best
+// guess at the difference; the guess creeps up slowly too, so a busier
+// route later on does not leave it stuck.
+let clockOffset = null;
+function hostTimeToLocal(hostTime, now) {
+  if (!Number.isFinite(hostTime)) return now;
+  const offset = now - hostTime;
+  clockOffset = clockOffset === null || offset < clockOffset ? offset : clockOffset + (offset - clockOffset) * 0.01;
+  return hostTime + clockOffset;
+}
+
+// When each input went (seq -> our clock), so the host's answer to it can
+// be held up against where we were then.
+let inputSeq = 0;
+const sentAt = new Map();
+
+net.onState = (incoming, hostTime) => {
+  if (!incoming || typeof incoming !== 'object') return;
+  const now = performance.now();
+  lastStateAt = now;
+  const at = hostTimeToLocal(hostTime, now);
   applySnapshot(incoming);
   crew.sync(state.players, local.id);
   for (const other of Object.values(state.players)) {
-    if (other.id !== local.id) crew.setTarget(other);
+    if (other.id !== local.id) crew.setTarget(other, at);
   }
   const me = state.players[local.id];
-  if (!me) return;
+  if (!me || !inWorld) return;
   player.body.atWheel = me.atWheel;
-  player.correct(me.x, me.y, me.z, RULES.correction);
+  const sent = sentAt.get(me.ack);
+  for (const seq of sentAt.keys()) {
+    if (seq < me.ack) sentAt.delete(seq);
+  }
+  if (sent !== undefined) player.reconcile(me.x, me.y, me.z, sent + (me.ackAge ?? 0), RULES.correction);
+  else player.correct(me.x, me.y, me.z, RULES.correction);
 };
 
-net.onLost = () => leaveShip('The ship went out of range');
+net.onLost = () => rejoin();
+net.onClosed = () => leaveShip('The host closed the ship');
+
+// Voice rides on the same links: the host adds audio to each joiner's as
+// soon as they are seated (again, after a reconnect).
+net.onSeated = (id, conn) => hostLink(id, conn);
+net.onSignal = (msg, conn, id) => handleSignal(msg, conn, id);
+initVoice({ send: (conn, msg) => net.post(conn, msg) });
+initVoiceUi();
+
+// The microphone is on while it can be used or tested: in a session, on
+// the Join screen (its Voice check), and in the settings' Audio tab.
+// Back on the main menu it goes off, and the browser's recording dot with it.
+function syncMic() {
+  if (sessionActive || opening || currentScreen() === 'join' || isSettingsOpen()) startMic();
+  else stopMic();
+}
 
 // --- menu ------------------------------------------------------------
 
 initMenu({
   onHost: () => hostGame(),
-  onJoin: () => openJoin(),
-  onSettings: () => openSettings(),
+  onJoin: () => {
+    openJoin();
+    startMic();
+  },
+  onSettings: () => openSettings(syncMic),
 });
 
 initJoin({
@@ -198,10 +334,25 @@ initJoin({
   onLeave: () => {
     refreshNameChip();
     showScreen('menu');
+    syncMic();
   },
 });
 
+// A second click while the first room is still opening must not open two.
+let opening = false;
 async function hostGame() {
+  if (opening || sessionActive) return;
+  opening = true;
+  startMic(); // asked now, while the click still counts as the player's
+  try {
+    await openRoom();
+  } finally {
+    opening = false;
+    syncMic(); // off again if no room opened
+  }
+}
+
+async function openRoom() {
   note('Opening a room...');
   local.name = playerName();
   local.isHost = true;
@@ -209,9 +360,12 @@ async function hostGame() {
   state.players = {};
   bodies.clear();
   inputs.clear();
+  forgetSeats();
+  crew.delay = 0; // the host simulates everyone: nothing to wait for
 
   let opened = false;
-  for (let tries = 0; tries < 4 && !opened; tries++) {
+  let failure = '';
+  for (let tries = 0, hiccups = 0; tries < 4 + hiccups && !opened; tries++) {
     const code = makeCode();
     try {
       await net.host(code);
@@ -219,14 +373,22 @@ async function hostGame() {
       state.code = code; // painted on the board at the dock
       opened = true;
     } catch (err) {
-      if (err.message !== 'taken') {
+      // A taken code: pick another. A server hiccup: knock again.
+      if (SERVER_TROUBLE.has(err.message) && hiccups < 3) {
+        hiccups += 1;
+        await wait(1000 * hiccups);
+      } else if (SERVER_TROUBLE.has(err.message)) {
+        note('Could not open a room. Check your connection.');
+        return;
+      } else if (err.message !== 'taken') {
         note('Could not open a room. Check your connection.');
         return;
       }
+      failure = err.message;
     }
   }
   if (!opened) {
-    note('Every room code was taken. Try again.');
+    note(failure === 'taken' ? 'Every room code was taken. Try again.' : 'Could not open a room. Check your connection.');
     return;
   }
 
@@ -234,7 +396,6 @@ async function hostGame() {
   state.players[me.id] = me;
   bodies.set(me.id, player.body);
   inputs.set(me.id, emptyInput());
-  lastHeard.clear();
   note('');
   // The crew screen first: the code to read out, and who has joined.
   state.phase = 'gathering';
@@ -244,25 +405,130 @@ async function hostGame() {
 
 // Each try gets a number; a cancelled one that answers late is ignored.
 let joinAttempt = 0;
+// PeerJS error types that mean the signalling server, not the ship, failed.
+const SERVER_TROUBLE = new Set(['network', 'server-error', 'socket-error', 'socket-closed']);
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function joinGame(code) {
   const attempt = ++joinAttempt;
   local.name = playerName();
   local.isHost = false;
   try {
-    const welcome = await net.join(code, local.name);
+    // A seat this tab held on this ship before (a reload, a dropped line)
+    // is asked for back. The public signalling server sometimes drops a
+    // knock, a few in a row when busy: keep knocking, a little slower each
+    // time, for about ten seconds before telling the player.
+    const token = savedSeat(code)?.token ?? null;
+    let welcome = null;
+    for (let tries = 0; !welcome; tries++) {
+      try {
+        welcome = await net.join(code, local.name, token);
+      } catch (err) {
+        if (attempt !== joinAttempt) return;
+        if (tries >= 4 || !SERVER_TROUBLE.has(err.message)) throw err;
+        await wait(1000 * (tries + 1));
+        if (attempt !== joinAttempt) return;
+      }
+    }
     if (attempt !== joinAttempt) return;
-    local.id = welcome.id;
-    local.code = code;
-    applySnapshot(welcome.s);
-    lastStateAt = performance.now();
+    board(welcome, code);
     joinSucceeded(code, state.players.host?.name ?? 'The host');
     startSession();
   } catch (err) {
     if (attempt !== joinAttempt) return;
-    net.close();
+    net.close({ bye: false });
     joinFailed(err.message, code);
   }
+}
+
+// Aboard (again): who we are now, and the ship as the host has it.
+function board(welcome, code) {
+  local.id = welcome.id;
+  local.code = code;
+  local.token = welcome.token;
+  rememberSeat(code, welcome.id, welcome.token);
+  clockOffset = null;
+  sentAt.clear();
+  player.forget();
+  crew.delay = 2000 / RULES.stateHz;
+  pending = emptyInput(); // presses made while the line was down are stale now
+  applySnapshot(welcome.s);
+  lastStateAt = performance.now();
+}
+
+// The seat token lives in the tab (sessionStorage), so a reload can still
+// claim the seat back, but a second tab never takes the first one's seat.
+function savedSeat(code) {
+  try {
+    const seat = JSON.parse(sessionStorage.getItem('patchitup-seat') ?? 'null');
+    return seat?.code === code ? seat : null;
+  } catch {
+    return null;
+  }
+}
+function rememberSeat(code, id, token) {
+  try {
+    sessionStorage.setItem('patchitup-seat', JSON.stringify({ code, id, token }));
+  } catch {
+    // storage blocked: a reload just gets a fresh seat
+  }
+}
+function forgetSavedSeat() {
+  try {
+    sessionStorage.removeItem('patchitup-seat');
+  } catch {
+    // nothing to forget
+  }
+}
+
+// The line to the host broke (or went silent): try to get back aboard,
+// into the same seat, for as long as the host holds it for us. Only if
+// that fails is the player sent back to the menu.
+let rejoining = false;
+async function rejoin() {
+  if (rejoining || !sessionActive || local.isHost) return;
+  rejoining = true;
+  const attempt = ++joinAttempt;
+  const giveUpAt = performance.now() + RULES.rejoinMs;
+  const { code, token } = local;
+  const oldId = local.id;
+  netNote.hidden = false;
+  net.close({ bye: false });
+  let reason = 'Lost the connection to the ship';
+  while (performance.now() < giveUpAt) {
+    try {
+      const welcome = await net.join(code, local.name, token);
+      if (attempt !== joinAttempt) return;
+      rejoining = false;
+      netNote.hidden = true;
+      board(welcome, code);
+      // A different seat (the old one was given up): start from its spot.
+      if (welcome.id !== oldId) {
+        inWorld = false;
+        startSession();
+      }
+      return;
+    } catch (err) {
+      if (attempt !== joinAttempt) return;
+      net.close({ bye: false });
+      if (err.message === 'Ship is full') {
+        reason = 'Your seat was taken while you were away';
+        break;
+      }
+      await wait(1500);
+      if (attempt !== joinAttempt) return;
+    }
+  }
+  leaveShip(reason, { keepSeat: true });
+}
+
+// The host's book of who is connected, emptied between sessions.
+function forgetSeats() {
+  lastHeard.clear();
+  lostAt.clear();
+  seatTokens.clear();
+  acks.clear();
+  hostInteractions.holds.clear();
 }
 
 function startSession() {
@@ -292,29 +558,42 @@ function syncPhaseUi() {
   playUi.hidden = !playing;
   if (state.phase === 'result') {
     if (player.controls.isLocked) player.controls.unlock();
-    resultTitle.textContent = state.result === 'landed' ? 'Landed!' : 'The ship went down';
     const holes = state.patched === 1 ? '1 breach' : `${state.patched} breaches`;
-    resultDetail.textContent =
-      state.result === 'landed'
-        ? `Three minutes in the air, ${holes} patched.`
-        : `${holes} patched before the altitude ran out.`;
+    const ending = {
+      landed: ['Landed!', `Three minutes in the air, ${holes} patched.`],
+      burned: ['Burned down', `Fire took all three rooms. ${holes} patched before the end.`],
+    }[state.result] ?? ['The ship went down', `${holes} patched before the altitude ran out.`];
+    resultTitle.textContent = ending[0];
+    resultDetail.textContent = ending[1];
+    // Only the host sends the crew back down; joiners wait for them.
+    const waiting = sessionActive && !local.isHost;
+    resultBack.disabled = waiting;
+    resultBack.textContent = waiting ? 'Waiting for the host...' : 'Back to dock';
   }
 }
 
-function leaveShip(message = '') {
+// keepSeat: the line broke rather than the player leaving, so joining the
+// same code again (while the host still holds the seat) gets it back.
+function leaveShip(message = '', { keepSeat = false } = {}) {
   sessionActive = false;
   inWorld = false;
+  joinAttempt += 1; // a reconnect in progress stops here
+  rejoining = false;
+  netNote.hidden = true;
+  if (!keepSeat) forgetSavedSeat();
   player.controls.unlock();
-  net.close();
+  net.close(); // goodbye to whoever is still connected, so nobody waits for us
+  endVoice();
   state.players = {};
   bodies.clear();
   inputs.clear();
-  lastHeard.clear();
+  forgetSeats();
   crew.sync({}, local.id);
   state.kit.heldBy = null;
   state.phase = 'lobby';
   state.countdown = null;
   playUi.hidden = true;
+  player.toggleView(false); // back to first person, own character hidden
   player.exit(scene);
   resetDockEffects();
   resetHelmEffects();
@@ -324,10 +603,13 @@ function leaveShip(message = '') {
   resetSubtitles();
   seenCallout = null;
   calloutBox.hidden = true;
+  seenStormHits = null;
+  alertBox.hidden = true;
   if (isSettingsOpen()) closeSettings();
   refreshNameChip();
   note(message);
   showScreen('menu');
+  syncMic();
 }
 
 initGathering({
@@ -347,6 +629,13 @@ function note(message) {
   menuNote.hidden = !message;
 }
 
+// Closing the tab: a host says goodbye so the crew is told at once rather
+// than waiting out a reconnect. A joiner does not, so a reload can still
+// take its seat back.
+addEventListener('pagehide', () => {
+  if (sessionActive && local.isHost) net.close();
+});
+
 player.controls.addEventListener('lock', () => (lockOverlay.hidden = true));
 player.controls.addEventListener('unlock', () => {
   if (sessionActive && state.phase !== 'result') lockOverlay.hidden = false;
@@ -354,16 +643,15 @@ player.controls.addEventListener('unlock', () => {
 document.getElementById('clickToPlay').addEventListener('click', () => player.controls.lock());
 // Settings mid-game: the game goes on underneath (it is online), and
 // "Click to play" is waiting when the page closes.
-document.getElementById('openSettings').addEventListener('click', () => openSettings());
+document.getElementById('openSettings').addEventListener('click', () => openSettings(syncMic));
 document.getElementById('leaveShip').addEventListener('click', () => leaveShip());
 document.getElementById('resultBack').addEventListener('click', () => {
   if (!sessionActive) {
     showScreen('menu');
     return;
   }
-  // The host decides; a joiner asks with its next input.
+  // Only the host decides; a joiner's button is disabled until then.
   if (local.isHost) returnToDock();
-  else againRequested = true;
 });
 
 // --- the loop --------------------------------------------------------
@@ -371,6 +659,7 @@ document.getElementById('resultBack').addEventListener('click', () => {
 // One input is built every frame but only sent 30 times a second, so a
 // tap or a drop made in between has to wait in here rather than vanish.
 let pending = emptyInput();
+let flyMismatch = 0; // joiner: how long our flight state has disagreed with the host's
 function queue(input) {
   pending.keys = input.keys;
   pending.yaw = input.yaw;
@@ -381,14 +670,30 @@ function queue(input) {
   pending.bell = pending.bell || input.bell;
   pending.callout = pending.callout || input.callout;
   pending.again = pending.again || input.again;
+  pending.wave = pending.wave || input.wave;
+  pending.flyTap = pending.flyTap || input.flyTap;
 }
 
 function hostTick(dt, now) {
+  const me = state.players[local.id];
+  if (me) me.mic = micState();
   for (const id of Object.keys(state.players)) {
     if (id === local.id) continue;
+    const seated = state.players[id];
+    if (seated.signal === 'lost') {
+      if (now - (lostAt.get(id) ?? now) > RULES.rejoinMs) dropPlayer(id);
+      continue;
+    }
     const heard = lastHeard.get(id) ?? now;
-    if (now - heard > RULES.timeoutMs) dropPlayer(id);
-    else state.players[id].signal = now - heard > RULES.weakSignalMs ? 'weak' : 'good';
+    if (now - heard > RULES.timeoutMs) holdSeat(id);
+    else seated.signal = now - heard > RULES.weakSignalMs ? 'weak' : 'good';
+    // Which input this state answers, and how long it has been steering
+    // them since it came: the joiner checks its own prediction with it.
+    const ack = acks.get(id);
+    if (ack) {
+      seated.ack = ack.seq;
+      seated.ackAge = Math.round(now - ack.at);
+    }
   }
 
   // On the crew screen nobody walks or works a station: the keys being
@@ -405,11 +710,26 @@ function hostTick(dt, now) {
     if (!body || !input) continue;
 
     body.atWheel = seated.atWheel;
+    // Flying comes with the uniform: a deckhand could otherwise float
+    // over the gate at the foot of the gangplank.
+    if (seated.role === 'crew') {
+      input.flyTap = false;
+      body.flying = false;
+    }
     stepBody(body, input, collidersFor(seated.role), dt, groundAt);
     seated.x = body.position.x;
     seated.y = body.position.y;
     seated.z = body.position.z;
     seated.yaw = input.yaw ?? seated.yaw;
+    // What the others need to animate you: where you look, whether you are
+    // off the ground, and a wave counter (counters survive a lost packet).
+    seated.pitch = input.pitch ?? 0;
+    seated.air = !body.onGround;
+    seated.flying = !!body.flying;
+    if (input.wave) {
+      seated.waves = (seated.waves ?? 0) + 1;
+      input.wave = false;
+    }
 
     if (seated.atWheel) game.steerShip(dt, input.keys ?? {});
     if (input.drop) {
@@ -427,18 +747,30 @@ function hostTick(dt, now) {
     }
     if (input.again) {
       input.again = false;
-      returnToDock();
+      // Only the host's own request counts: a joiner (or a tampered
+      // client) cannot send the whole crew back to the dock.
+      if (seated.id === local.id) returnToDock();
     }
   }
 
   if (state.phase === 'lobby') game.tickLobby(dt);
   else if (state.phase === 'takeoff') game.tickTakeoff(dt);
-  else if (state.phase === 'flight') game.tickFlight(dt);
+  else if (state.phase === 'flight') game.tickFlight(dt, { bodies, inputs });
 
   hostInteractions.update(dt, state.players, bodies, inputs, {
     canUse: game.canUse,
-    run: (interact, seated, body) => game.ACTIONS[interact.action]?.(interact, seated, body),
+    run: (interact, seated, body) => {
+      const done = game.ACTIONS[interact.action]?.(interact, seated, body);
+      // Every use counts, so the others see an arm reach out.
+      if (done !== false) seated.uses = (seated.uses ?? 0) + 1;
+      return done;
+    },
   });
+  // Holding E on a breach: the others see you kneel and hammer.
+  for (const seated of Object.values(state.players)) {
+    const hold = hostInteractions.holds.get(seated.id);
+    seated.act = hold?.target?.userData.interact?.action === 'patch' ? 'patch' : null;
+  }
 
   player.syncView(); // the host's camera follows its own authoritative body
   crew.sync(state.players, local.id);
@@ -505,28 +837,52 @@ function updateKit() {
     kit.rotation.set(0, 0, 0);
     return;
   }
-  if (heldBy === local.id) {
+  if (heldBy === local.id && !player.thirdPerson) {
     if (kit.parent !== camera) camera.add(kit);
     kit.position.set(0.48, -0.4, -1);
     kit.rotation.set(0, 0.5, 0);
     return;
   }
-  const carrier = crew.meshFor(heldBy);
-  if (carrier && kit.parent !== carrier) carrier.add(kit);
-  if (carrier) {
-    kit.position.set(0, 0.15, -0.5);
+  // In someone's arms: the character's hold socket, or in front of a sphere.
+  const carrier = heldBy === local.id ? player.avatar?.root : crew.meshFor(heldBy);
+  const character = carrier?.userData.character;
+  const hands = character?.holdSocket ?? carrier;
+  if (hands && kit.parent !== hands) hands.add(kit);
+  if (hands) {
+    if (character) kit.position.set(0, 0, 0);
+    else kit.position.set(0, 0.15, -0.5);
     kit.rotation.set(0, 0, 0);
   }
+}
+
+// Your own character: only seen in third person, but always kept up to
+// date so switching views never shows a frozen pose.
+function updateOwnCharacter(dt, ctx) {
+  const me = state.players[local.id];
+  if (!me || !inWorld) return;
+  const color = ROLE_COLORS[me.role] ?? ROLE_COLORS.crew;
+  const avatar = player.ensureAvatar(me.role, color);
+  player.viewColliders = collidersFor(me.role);
+  if (avatar) {
+    avatar.setColor(color);
+    setHat(avatar.root, me.hat ?? 0);
+    player.updateAvatar(dt, me, {
+      bodyYaw: me.atWheel ? ctx.wheelYaw : undefined,
+      steering: me.atWheel ? ctx.steering : 0,
+      carrying: ctx.kitHolder === local.id || !!me.bucket,
+    });
+  }
+  player.syncView(dt);
 }
 
 // What each role is for, read out while the ship climbs, with the keys
 // the player has actually bound.
 const JOBS = {
   mechanic: () =>
-    `Mechanic: patch the breaches (hold ${keyLabel(settings.keys.interact)}) and keep the furnace stoked. A cold furnace means no power.`,
+    `Mechanic: patch the breaches (hold ${keyLabel(settings.keys.interact)}), keep the furnace stoked, and put out fires with the buckets in the engine room.`,
   engineer: () => 'Engineer: pull the levers to share power. Lift holds her up, engines steer, shields stop rocks.',
   pilot: () =>
-    `Pilot: take the wheel and steer round the rocks. Starved engines make her slow to answer. ${keyLabel(settings.keys.bell)} rings the bell.`,
+    `Pilot: steer round the rocks. When a storm wall comes, ring the bell (${keyLabel(settings.keys.bell)}) so the crew can brace.`,
 };
 
 // The climb: what is happening, then your job, then a last call.
@@ -583,6 +939,120 @@ function updateShipPanel() {
   plankText.classList.toggle('bad', planks === 0);
   fuseText.textContent = `Fuses ${state.fuses}`;
   fuseText.classList.toggle('bad', state.fuses === 0);
+
+  // The fire that will spread soonest.
+  const fires = Object.entries(state.fires).filter(([, fire]) => fire);
+  hazardRow.hidden = !fires.length;
+  if (fires.length) {
+    const [room, fire] = fires.sort((a, b) => b[1].spread - a[1].spread)[0];
+    const left = Math.max(0, Math.ceil(RULES.fireSpreadSeconds - fire.spread));
+    const more = fires.length > 1 ? ` (+${fires.length - 1} more)` : '';
+    hazardText.textContent = `Fire: ${game.ROOM_LABEL[room]}${more} · spreads in ${left} s`;
+  }
+}
+const hazardRow = document.getElementById('hazardRow');
+const hazardText = document.getElementById('hazardText');
+
+// The storm alarm. The pilot sees the wall coming and is told to ring the
+// bell; everyone else only hears about it once the bell rings. Then a
+// flash and a jolt when it hits.
+const alertBox = document.getElementById('alert');
+const alertTitle = document.getElementById('alertTitle');
+const alertText = document.getElementById('alertText');
+let seenStormHits = null;
+let stormJolt = 0; // when the last hit landed, for the camera jolt
+function updateStormAlert(now) {
+  const storm = state.storm;
+  const me = state.players[local.id];
+  const pilot = me?.role === 'pilot';
+  const showing = state.phase === 'flight' && storm.active && (pilot || storm.warned);
+  alertBox.hidden = !showing;
+  if (showing) {
+    const left = Math.ceil(storm.left);
+    alertBox.classList.toggle('braced', !!me?.braced);
+    if (pilot && !storm.warned) {
+      alertTitle.textContent = 'Storm wall!';
+      alertText.textContent = `Impact in ${left} · ring the bell (${keyLabel(settings.keys.bell)}) so the crew braces`;
+    } else {
+      alertTitle.textContent = me?.braced ? 'Braced ✓' : 'BRACE! Storm wall';
+      alertText.textContent = me?.braced
+        ? `Impact in ${left} · keep holding`
+        : `Impact in ${left} · hold ${keyLabel(settings.keys.interact)} to hold on`;
+    }
+  }
+  if (seenStormHits === null) seenStormHits = storm.hits;
+  if (storm.hits !== seenStormHits) {
+    seenStormHits = storm.hits;
+    stormJolt = now;
+    flashUntil = now + 700;
+    flash.classList.add('storm');
+    play('mechanic_cannonball_rack_clunk', 0.9);
+  }
+  if (now > flashUntil) flash.classList.remove('storm');
+}
+
+// A fuse or a bucket shows in the hands that carry it: yours in front of
+// the camera, a teammate's in front of their sphere.
+const heldMeshes = new Map(); // player id -> { kind, mesh }
+function heldMesh(kind) {
+  const group = new THREE.Group();
+  if (kind === 'bucket') {
+    const pail = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.16, 0.12, 0.26, 12),
+      new THREE.MeshStandardMaterial({ color: '#4a86e8', flatShading: true })
+    );
+    const water = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.14, 0.14, 0.02, 12),
+      new THREE.MeshStandardMaterial({ color: '#9fd3ec', emissive: '#3a7fb0' })
+    );
+    water.position.y = 0.11;
+    group.add(pail, water);
+  } else {
+    const body = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.05, 0.05, 0.22, 10),
+      new THREE.MeshStandardMaterial({ color: '#d9a43a', flatShading: true })
+    );
+    body.rotation.z = Math.PI / 2;
+    const band = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.055, 0.055, 0.06, 10),
+      new THREE.MeshStandardMaterial({ color: '#e2574c' })
+    );
+    band.rotation.z = Math.PI / 2;
+    group.add(body, band);
+  }
+  return group;
+}
+function updateHeldItems() {
+  for (const player of Object.values(state.players)) {
+    const kind = player.bucket ? 'bucket' : player.fuse ? 'fuse' : null;
+    const mine = player.id === local.id;
+    // First person: in front of the camera. Otherwise in the character's
+    // arms (its hold socket), or in front of a sphere before it loads.
+    const firstPerson = mine && !player.thirdPerson;
+    const carrier = mine ? (inWorld ? player.avatar?.root ?? null : null) : crew.meshFor(player.id);
+    const character = firstPerson ? null : carrier?.userData.character;
+    const holder = firstPerson ? (inWorld ? camera : null) : character?.holdSocket ?? carrier;
+    let held = heldMeshes.get(player.id);
+    if (held && (held.kind !== kind || held.mesh.parent !== holder)) {
+      held.mesh.removeFromParent();
+      heldMeshes.delete(player.id);
+      held = null;
+    }
+    if (!kind || !holder || held) continue;
+    const mesh = heldMesh(kind);
+    mesh.userData.held = true;
+    if (firstPerson) mesh.position.set(0.42, -0.38, -0.9);
+    else if (character) mesh.position.set(0, -0.05, 0.02);
+    else mesh.position.set(0.32, 0.05, -0.45);
+    holder.add(mesh);
+    heldMeshes.set(player.id, { kind, mesh });
+  }
+  for (const [id, held] of heldMeshes) {
+    if (!state.players[id]) {
+      held.mesh.removeFromParent();
+      heldMeshes.delete(id);
+    }
+  }
 }
 
 // A call-out: the caller's name and words in their role colour, with the
@@ -628,9 +1098,12 @@ function updateBanner() {
     return;
   }
   if (state.countdown === null) {
-    banner.textContent = crewList.some((p) => p.role === 'crew')
-      ? 'Waiting for everyone to dress'
-      : 'All aboard: up the gangplank';
+    const lost = crewList.find((p) => p.signal === 'lost');
+    banner.textContent = lost
+      ? `Waiting for ${lost.name} to reconnect`
+      : crewList.some((p) => p.role === 'crew')
+        ? 'Waiting for everyone to dress'
+        : 'All aboard: up the gangplank';
     return;
   }
   banner.textContent = `Casting off in ${Math.ceil(state.countdown)}`;
@@ -642,11 +1115,13 @@ function updateStatus() {
   const role = me.role === 'crew' ? 'No uniform' : me.role[0].toUpperCase() + me.role.slice(1);
   const holding = me.fuse
     ? 'a spare fuse'
-    : state.kit.heldBy === me.id
+    : me.bucket
+      ? 'a bucket of water'
+      : state.kit.heldBy === me.id
       ? `the patch kit (${state.kit.planks} plank${state.kit.planks === 1 ? '' : 's'})`
       : 'nothing';
   const names = Object.values(state.players)
-    .map((p) => (p.id === local.id ? `${p.name} (you)` : p.name))
+    .map((p) => (p.id === local.id ? `${p.name} (you)` : p.signal === 'lost' ? `${p.name} (reconnecting)` : p.name))
     .join(', ');
   // Power and the rudder only mean something once the ship is flying.
   const parts = [
@@ -669,11 +1144,96 @@ function orbitShip(t) {
   camera.rotation.y += 0.42;
 }
 
+// The network and, on the host, the game itself: run by every frame, and
+// by the pulse below while frames have stopped (a hidden, minimised or
+// covered window), so nobody is dropped for looking at another window.
+let lastStepAt = performance.now();
+function step(now) {
+  const dt = Math.min((now - lastStepAt) / 1000, 0.1); // a stall must not teleport anyone
+  lastStepAt = now;
+  if (!sessionActive) return dt;
+  syncPhaseUi();
+
+  if (state.phase === 'gathering') {
+    player.readInput(); // keys typed on this screen are not for walking
+    if (local.isHost) hostTick(dt, now);
+    else joinerTick(emptyInput(), dt, now, false); // still here, so the host keeps our seat
+    return dt;
+  }
+
+  const input = player.readInput();
+  if ((state.players[local.id]?.role ?? 'crew') === 'crew') input.flyTap = false; // no flying before the uniform
+  input.again = againRequested;
+  againRequested = false;
+  if (local.isHost) {
+    // The host plays through the same pipe as everyone else.
+    const own = inputs.get(local.id);
+    if (own) {
+      Object.assign(own, input, {
+        useTap: own.useTap || input.useTap,
+        drop: own.drop || input.drop,
+        bell: own.bell || input.bell,
+        callout: own.callout || input.callout,
+        again: own.again || input.again,
+        wave: own.wave || input.wave,
+        flyTap: own.flyTap || input.flyTap,
+      });
+    }
+    hostTick(dt, now);
+  } else {
+    joinerTick(input, dt, now, inWorld);
+  }
+  return dt;
+}
+
+function joinerTick(input, dt, now, walking) {
+  // Nothing from the host for a while: the line is dead even if it has not
+  // said so. Get back aboard if we can (this keeps trying in the background).
+  if (now - lastStateAt > RULES.timeoutMs) rejoin();
+
+  if (walking) {
+    player.body.atWheel = state.players[local.id]?.atWheel ?? false;
+    player.predict(input, dt, collidersFor(state.players[local.id]?.role ?? 'crew'), groundAt);
+    player.record(now);
+    // Flying is predicted here too; if the host disagrees for a moment
+    // (a tap it never saw), follow the host.
+    const hostFlying = state.players[local.id]?.flying;
+    if (hostFlying !== undefined && hostFlying !== !!player.body.flying) {
+      flyMismatch += dt;
+      if (flyMismatch > 0.5) {
+        player.body.flying = hostFlying;
+        flyMismatch = 0;
+      }
+    } else {
+      flyMismatch = 0;
+    }
+  }
+
+  queue(input);
+  pending.seq = inputSeq + 1;
+  pending.mic = micState();
+  if (net.sendInput(pending, now)) {
+    inputSeq += 1;
+    sentAt.set(inputSeq, now);
+    if (sentAt.size > 120) sentAt.delete(sentAt.keys().next().value);
+    for (const press of PRESSES) pending[press] = false;
+    pending.again = false;
+  }
+}
+
+// Frames stop when the window is hidden or covered; the pulse keeps the
+// step going until they come back. While frames run it does nothing.
+let lastFrameAt = performance.now();
+startPulse(30, () => {
+  const now = performance.now();
+  if (now - lastFrameAt > 200 && now - lastStepAt > 20) step(now);
+});
+
 const clock = new THREE.Clock();
 function loop() {
-  const dt = Math.min(clock.getDelta(), 0.1); // a backgrounded tab must not teleport anyone
-  const t = clock.elapsedTime;
   const now = performance.now();
+  lastFrameAt = now;
+  const t = clock.getElapsedTime();
 
   // The ship rocks in the storm, but not while it is moored. On the way
   // up the storm builds, the bow lifts, and the deck shudders as she
@@ -683,50 +1243,20 @@ function loop() {
   const rocking = (state.phase === 'result' ? 0 : climbed) * motion;
   const noseUp = state.phase === 'takeoff' ? Math.sin(climbed * Math.PI) * 0.05 * motion : 0;
   const lurch = state.phase === 'takeoff' ? Math.max(0, 1 - state.takeoff / 1.2) * Math.sin(t * 40) * 0.012 * motion : 0;
-  ship.rotation.z = Math.sin(t * 0.8) * 0.06 * rocking + noseUp + lurch;
+  const jolted = (now - stormJolt) / 1000;
+  const jolt = jolted < 1.2 ? Math.sin(jolted * 30) * 0.05 * (1 - jolted / 1.2) * motion : 0;
+  ship.rotation.z = Math.sin(t * 0.8) * 0.06 * rocking + noseUp + lurch + jolt;
   ship.rotation.x = Math.sin(t * 0.5) * 0.03 * rocking;
 
+  const dt = step(now);
+
   if (sessionActive && state.phase === 'gathering') {
-    syncPhaseUi();
-    player.readInput(); // keys typed on this screen are not for walking
-    if (local.isHost) hostTick(dt, now);
-    else if (now - lastStateAt > RULES.timeoutMs) leaveShip('The ship went out of range');
-    else net.sendInput(emptyInput(), now); // still here, so the host keeps our seat
-    if (state.phase === 'gathering') updateGathering(state, local, now);
+    updateGathering(state, local, now, (id) => isTalking(id, now));
     orbitShip(t);
   } else if (sessionActive) {
-    syncPhaseUi();
-    const input = player.readInput();
-    input.again = againRequested;
-    againRequested = false;
-    if (local.isHost) {
-      // The host plays through the same pipe as everyone else.
-      const own = inputs.get(local.id);
-      if (own) {
-        Object.assign(own, input, {
-          useTap: own.useTap || input.useTap,
-          drop: own.drop || input.drop,
-          bell: own.bell || input.bell,
-          callout: own.callout || input.callout,
-          again: own.again || input.again,
-        });
-      }
-      hostTick(dt, now);
-    } else if (now - lastStateAt > RULES.timeoutMs) {
-      leaveShip('The ship went out of range');
-    } else {
-      player.body.atWheel = state.players[local.id]?.atWheel ?? false;
-      player.predict(input, dt, collidersFor(state.players[local.id]?.role ?? 'crew'), groundAt);
-      queue(input);
-      if (net.sendInput(pending, now)) {
-        pending.useTap = false;
-        pending.drop = false;
-        pending.bell = false;
-        pending.callout = false;
-        pending.again = false;
-      }
-    }
-    crew.update(dt);
+    const crewCtx = { kitHolder: state.kit.heldBy, wheelYaw: HELM_STANCE.look, steering: state.steering ?? 0 };
+    crew.update(dt, crewCtx, now);
+    updateOwnCharacter(dt, crewCtx);
     view.update(dt);
     updateStatus();
     updateBanner();
@@ -734,10 +1264,18 @@ function loop() {
     updateTakeoff();
     updateSubtitles(state, now, settings.subtitles, subtitleLine);
     updateCallout(now);
+    updateStormAlert(now);
     if (state.phase === 'flight') updateShipPanel();
   } else {
     orbitShip(t);
   }
+  if (sessionActive) placeCrewVoices(now);
+  updateVoiceUi(now, {
+    players: state.players,
+    localId: local.id,
+    playing: sessionActive && !playUi.hidden,
+    colorOf: (role) => ROLE_COLORS[role] ?? ROLE_COLORS.crew,
+  });
 
   // Every browser draws the scene from the state it has.
   applyState(world, state, state.players[local.id]?.atWheel ?? false);
@@ -746,6 +1284,8 @@ function loop() {
   updateHelm(world, state, { camera, view, player, now, dt });
   updatePower(world, state, { now, dt });
   updateEngineRoom(world, state, { now, dt });
+  updateHazards(world, state, now);
+  updateHeldItems();
   const airborne = state.phase === 'takeoff' || state.phase === 'flight';
   rain.update(dt, settings.rain && sessionActive && inWorld && airborne);
   // The Blender dock swaps in its own lockers once it loads: paint those too.
@@ -754,6 +1294,32 @@ function loop() {
 
   renderer.render(scene, camera);
   requestAnimationFrame(loop);
+}
+
+// --- voice -------------------------------------------------------------
+
+// Who is talking right now: our own mic's gate, or a teammate's voice.
+function isTalking(id, now) {
+  return id === local.id ? voiceStatus(now).talking : isSpeaking(id, now);
+}
+
+// Each voice comes from where that teammate's character stands (as drawn,
+// so it moves as smoothly as they do), heard from our own head.
+let voicesPlacedAt = 0;
+function placeCrewVoices(now) {
+  if (now - voicesPlacedAt < 50) return;
+  voicesPlacedAt = now;
+  const sources = {};
+  for (const other of Object.values(state.players)) {
+    if (other.id === local.id || !hasVoice(other.id)) continue;
+    const at = crew.meshFor(other.id)?.position ?? other;
+    sources[other.id] = { x: at.x, z: at.z };
+  }
+  const listener = { x: player.body.position.x, z: player.body.position.z, yaw: player.lookYaw };
+  placeVoices(listener, sources, {
+    spatial: settings.voice3d && inWorld && state.phase !== 'gathering',
+    doorOpen: state.phase === 'lobby',
+  });
 }
 
 // --- settings ----------------------------------------------------------
@@ -822,6 +1388,7 @@ if (import.meta.env.DEV) {
   window.patch = {
     scene, camera, ship, world, player, crew, view,
     state, local, net, game, bodies, inputs, RULES, THREE, hostInteractions, renderer,
+    voice: { voiceStatus, isSpeaking, hasVoice, micState, outputRoute },
   };
 }
 

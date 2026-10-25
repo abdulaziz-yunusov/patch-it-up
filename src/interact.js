@@ -9,6 +9,8 @@ import { keyLabel, settings } from './settings.js';
 
 const CENTRE = new THREE.Vector2(0, 0);
 const DOT = '·';
+const _eye = new THREE.Vector3();
+const _aim = new THREE.Vector3();
 
 // The nearest thing along the ray that carries userData.interact.
 function firstInteractive(ship, raycaster) {
@@ -46,6 +48,15 @@ export class InteractionView {
     let target = null;
     if (locked) {
       this.raycaster.setFromCamera(CENTRE, this.camera);
+      // In third person the camera is behind you: aim at the spot under the
+      // crosshair, but measure reach from your own eyes.
+      if (this.player.thirdPerson) {
+        const ray = this.raycaster.ray;
+        _aim.copy(ray.direction).multiplyScalar(this.player.camDistance + RULES.reach * 0.8).add(ray.origin);
+        ray.origin.copy(this.player.eye(_eye));
+        this.ship.localToWorld(ray.origin);
+        ray.direction.copy(_aim).sub(ray.origin).normalize();
+      }
       this.raycaster.far = RULES.reach;
       target = firstInteractive(this.ship, this.raycaster);
     }
@@ -99,6 +110,11 @@ export class HostInteractions {
   }
 
   update(dt, players, bodies, inputs, { canUse, run }) {
+    // The ship has just been rocked for this frame, but its parts still
+    // hold last frame's positions until it is drawn. Bring them up to date
+    // first, so the rays and the stations agree on where the ship is: on a
+    // slow machine the gap is big enough to miss a thin target.
+    this.ship.updateMatrixWorld(true);
     for (const player of Object.values(players)) {
       const body = bodies.get(player.id);
       const input = inputs.get(player.id);

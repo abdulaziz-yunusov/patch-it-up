@@ -129,6 +129,12 @@ button:hover {
   filter: brightness(1.12);
 }
 
+button:disabled {
+  opacity: 0.55;
+  cursor: default;
+  filter: none;
+}
+
 button.primary {
   color: #2a1608;
   background: #f2a33a;
@@ -881,7 +887,23 @@ button.big {
   border-radius: 16px;
 }
 
-/* Voice chat is not built yet: the card says so, in muted colours. */
+/* Voice check: muted colours until the mic is on, then the meter shows
+   how loud it hears you and turns green while the crew can hear you. */
+.voice-check.live .voice-row {
+  color: #c9cff0;
+}
+
+.voice-check.problem .voice-status {
+  color: #ffb3ab;
+}
+
+.voice-retry {
+  align-self: flex-start;
+  height: 44px;
+  padding: 0 16px;
+  font-size: 18px;
+}
+
 .voice-row {
   display: flex;
   align-items: center;
@@ -906,10 +928,41 @@ button.big {
 }
 
 .meter {
+  position: relative;
   height: 12px;
   overflow: hidden;
   background: #2d3459;
   border-radius: 6px;
+}
+
+.meter-fill {
+  width: 0;
+  height: 100%;
+  background: #8f97c2;
+  border-radius: 6px;
+  transition: width 60ms linear;
+}
+
+.meter-fill.sending {
+  background: #49b97a;
+}
+
+/* Where the open mic starts sending. */
+.meter-gate {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  margin-left: -1px;
+  background: #ffd58a;
+}
+
+.meter-gate[hidden] {
+  display: none;
+}
+
+.avatar.speaking {
+  box-shadow: 0 0 0 4px #49b97a;
 }
 
 .check {
@@ -953,6 +1006,11 @@ button.big {
 .badge.weak {
   color: #3d2a08;
   background: #ffd58a;
+}
+
+.badge.lost {
+  color: #fff3f0;
+  background: #c4473c;
 }
 
 .crew-list {
@@ -1544,6 +1602,13 @@ legend.set-label {
   accent-color: #f2a33a;
 }
 
+.mic-test {
+  flex: 0 1 260px;
+  min-width: 120px;
+  height: 16px;
+  border-radius: 8px;
+}
+
 .set-divider {
   height: 2px;
   background: #2d3459;
@@ -1803,6 +1868,69 @@ legend.set-label {
 
 /* --- In-game extras ---------------------------------------------------- */
 
+/* Voice: one row per crew member, top left; a ring in your role colour
+   while you talk. */
+#voiceHud {
+  position: absolute;
+  left: 16px;
+  top: 44px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: calc(15px * var(--hud-scale, 1));
+  font-weight: 800;
+}
+
+.vh-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 4px 4px;
+  color: #f3f4fb;
+  background: rgba(10, 12, 26, 0.6);
+  border-radius: 999px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.vh-mic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(26px * var(--hud-scale, 1));
+  height: calc(26px * var(--hud-scale, 1));
+  color: #14182c;
+  background: var(--role, #f3f4fb);
+  border-radius: 50%;
+}
+
+.vh-mic svg {
+  width: 62%;
+  height: 62%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+}
+
+.vh-row.talking .vh-mic {
+  box-shadow: 0 0 0 3px #f3f4fb, 0 0 12px 4px var(--role, #f3f4fb);
+}
+
+.vh-row.muted .vh-mic,
+.vh-row.off .vh-mic {
+  color: #f3f4fb;
+  background: #4a5587;
+}
+
+.vh-row.off .vh-name {
+  opacity: 0.6;
+}
+
+.vh-note {
+  font-weight: 700;
+  color: #ffd58a;
+}
+
 #subtitle {
   position: absolute;
   left: 50%;
@@ -1817,6 +1945,48 @@ legend.set-label {
   white-space: pre-line;
   background: rgba(10, 12, 26, 0.78);
   border-radius: 10px;
+}
+
+/* A dropped line: top centre, over every screen, until we are back aboard. */
+#netNote {
+  position: fixed;
+  left: 50%;
+  top: 16px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 32px);
+  padding: 10px 18px;
+  transform: translateX(-50%);
+  font-size: calc(17px * var(--hud-scale, 1));
+  font-weight: 800;
+  color: #2a1608;
+  background: #ffd58a;
+  border: 3px solid #3b2516;
+  border-radius: 12px;
+  box-shadow: 0 4px 0 #3b2516;
+  pointer-events: none;
+}
+
+#netNote[hidden] {
+  display: none;
+}
+
+.net-spinner {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  border: 3px solid #3b2516;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: net-spin 0.8s linear infinite;
+}
+
+@keyframes net-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 #fps {
@@ -1968,11 +2138,19 @@ legend.set-label {
 /* --- Call-outs ----------------------------------------------------------
    The caller's words in their role colour, under the timer. */
 
-#callout {
+/* The storm alarm over any call-out, both under the round HUD. */
+#topAlerts {
   position: absolute;
   left: 50%;
   top: calc(196px * var(--hud-scale, 1));
   transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+#callout {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1993,4 +2171,46 @@ legend.set-label {
   font-weight: 400;
   font-size: calc(26px * var(--hud-scale, 1));
   line-height: 1.1;
+}
+
+/* --- Hazards ------------------------------------------------------------ */
+
+#alert {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 26px;
+  color: #fff4dc;
+  background: #e2574c;
+  border: 4px solid #3b2516;
+  border-radius: 14px;
+  box-shadow: 0 6px 0 #3b2516;
+  text-align: center;
+}
+
+#alert.braced {
+  color: #143d26;
+  background: #9fe3b8;
+}
+
+#alertTitle {
+  font-family: 'Lilita One', 'Arial Black', sans-serif;
+  font-weight: 400;
+  font-size: calc(34px * var(--hud-scale, 1));
+  line-height: 1.05;
+}
+
+#alertText {
+  font-size: calc(16px * var(--hud-scale, 1));
+  font-weight: 800;
+}
+
+/* A storm wall hits: a cold white flash instead of the red one. */
+#flash.storm {
+  background: radial-gradient(circle, rgba(220, 230, 255, 0.35) 30%, rgba(200, 215, 255, 0.95) 100%);
+}
+
+.panel-foot.hazard {
+  color: #ffb3a8;
 }

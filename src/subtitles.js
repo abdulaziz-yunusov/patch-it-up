@@ -27,6 +27,9 @@ function remember(state) {
     blown: [...state.blown],
     planks: state.kit.planks,
     callout: state.callout.count,
+    fires: Object.fromEntries(Object.entries(state.fires).map(([room, fire]) => [room, !!fire])),
+    stormWarned: state.storm.active && state.storm.warned,
+    stormHits: state.storm.hits,
   };
 }
 
@@ -58,6 +61,13 @@ export function updateSubtitles(state, now, on, el) {
     });
     if (flying && seen.planks === 0 && was.planks > 0) say('[Patch kit empty: restock at the supply rack]', now);
     if (seen.callout !== was.callout && state.callout.text) say(`[${state.callout.name}: ${state.callout.text}]`, now);
+    for (const [room, burning] of Object.entries(seen.fires)) {
+      const name = room === 'helm' ? 'helm' : `${room} room`;
+      if (flying && burning && !was.fires[room]) say(`[Fire in the ${name}!]`, now);
+      if (flying && !burning && was.fires[room]) say(`[Fire out in the ${name}]`, now);
+    }
+    if (flying && seen.stormWarned && !was.stormWarned) say('[The alarm bell! Storm wall: brace!]', now);
+    if (seen.stormHits > was.stormHits) say('[The storm wall hits!]', now);
   }
 
   queue = queue.filter((line) => line.until > now);

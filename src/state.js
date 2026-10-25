@@ -44,6 +44,21 @@ export const RULES = {
 
   calloutCooldownMs: 2000, // one call-out per player this often
 
+  // Fire: a burning room's station stops working, and every 20 s a fire
+  // spreads to the next room. Two buckets of water put one out. All
+  // three rooms alight and the ship is lost.
+  fireSpreadSeconds: 20,
+  fireBuckets: 2,
+  rockFireChance: 0.4, // a rock that gets through may set the helm alight
+
+  // Storm walls: the pilot sees one coming and has this long to ring the
+  // bell; braced crew (holding the interact key) are not thrown about.
+  stormWarnSeconds: 6,
+  stormFirstAt: 40, // seconds into the flight before the first can come
+  stormPush: 5, // metres per second an unbraced player is thrown
+  stormAltitudeLoss: 5,
+  stormSafeShields: 2, // each shield unit short of this tears a hole at impact
+
   maxPerTube: 4,
   patchSeconds: 2.5,
   steerRate: 0.9,
@@ -51,7 +66,8 @@ export const RULES = {
   maxPlayers: 3,
   inputHz: 30, // joiner -> host
   stateHz: 20, // host -> all
-  timeoutMs: 5000, // silence this long means that browser is gone
+  timeoutMs: 8000, // silence this long means that browser's line is dead
+  rejoinMs: 30000, // and its seat is held this much longer for it to reconnect
   weakSignalMs: 1000, // silence this long shows them as lagging on the crew screen
   countdown: 5, // seconds on the deck before the ship casts off
   takeoffSeconds: 7, // the climb away from the dock, before the round starts
@@ -64,8 +80,8 @@ export const RULES = {
 
 // The route board at the dock. The host picks; the flight's pace follows.
 export const ROUTES = [
-  { name: 'Calm Cliffs', breachEvery: [10, 18], rockEvery: 12 },
-  { name: 'Thunder Pass', breachEvery: [6, 11], rockEvery: 8 },
+  { name: 'Calm Cliffs', breachEvery: [10, 18], rockEvery: 12, stormEvery: [55, 80] },
+  { name: 'Thunder Pass', breachEvery: [6, 11], rockEvery: 8, stormEvery: [35, 55] },
 ];
 
 // What the dock mirror can put on your head. Index 0 is bare.
@@ -117,6 +133,8 @@ export const state = {
   fuses: RULES.spareFuses, // spare fuses left in the engine room crate
   drain: 0, // power units the breaches in the engine and power rooms cost now
   callout: { count: 0, id: '', name: '', role: '', text: '' }, // the last call-out
+  fires: { engine: null, power: null, helm: null }, // room -> { burn, spread, water } while alight
+  storm: { active: false, left: 0, warned: false, hits: 0 }, // a storm wall on its way; hits counts impacts
   heat: RULES.heatStart, // the furnace, 0 (out) .. 1 (roaring)
   climb: 0, // per cent per second altitude is changing, for the HUD
   breaches: {}, // id -> true while that hole is open
@@ -142,7 +160,7 @@ export const state = {
 };
 
 // Who this browser is. Never sent anywhere.
-export const local = { id: null, name: 'Deckhand', isHost: false, code: '' };
+export const local = { id: null, name: 'Deckhand', isHost: false, code: '', token: null }; // token: claims our seat back after a drop
 
 export function newPlayer(id, name, index) {
   const spawn = SPAWNS[index % SPAWNS.length];
@@ -156,8 +174,9 @@ export function newPlayer(id, name, index) {
     yaw: SPAWN_YAW, // on the dock you arrive facing the lockers
     atWheel: false,
     hat: 0, // index into HATS, changed at the mirror
-    signal: 'good', // 'weak' when the host has not heard from them lately
+    signal: 'good', // 'weak' when the host has not heard from them lately, 'lost' while it waits for them to reconnect
     fuse: false, // carrying a spare fuse from the engine room
+    bucket: false, // carrying a bucket of water
   };
 }
 
@@ -175,6 +194,8 @@ export function snapshot() {
     fuses: state.fuses,
     drain: state.drain,
     callout: state.callout,
+    fires: state.fires,
+    storm: state.storm,
     heat: state.heat,
     climb: state.climb,
     breaches: state.breaches,
@@ -211,6 +232,8 @@ export function applySnapshot(s) {
   state.fuses = s.fuses ?? state.fuses;
   state.drain = s.drain ?? 0;
   state.callout = s.callout ?? state.callout;
+  state.fires = s.fires ?? state.fires;
+  state.storm = s.storm ?? state.storm;
   state.heat = s.heat ?? state.heat;
   state.climb = s.climb ?? 0;
   state.breaches = s.breaches ?? state.breaches;

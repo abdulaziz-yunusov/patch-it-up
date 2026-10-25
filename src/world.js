@@ -129,7 +129,9 @@ export function buildShip() {
 
   // Hull: floor, ceiling, starboard wall, stern wall.
   part(box(length, 0.3, width), deck, 0, -0.15, 0);
-  part(box(length, thickness, width), wood, 0, wallHeight + 0.1, 0);
+  // The ceiling is solid now that players can fly (double-tap jump): no
+  // flying up through the roof. A jump never reaches it.
+  solid(box(length, thickness, width), wood, 0, wallHeight + 0.1, 0);
   solid(box(length, wallHeight, thickness), wood, 0, wallHeight / 2, width / 2);
   solid(box(thickness, wallHeight, width), wood, -length / 2, wallHeight / 2, 0);
 
@@ -214,11 +216,16 @@ export function buildShip() {
   rock.name = 'rock';
   rock.visible = false;
 
+  const fires = buildFires(ship, box);
+  const storm = buildStormWall(ship);
+
   const dock = buildDock(ship, box);
 
   return {
     ship,
     rock,
+    fires,
+    storm,
     roomMaterials,
     colliders,
     breaches,
@@ -251,6 +258,101 @@ export function hatchShut(state) {
 // The dock falls this far below the ship by the end of the climb, and
 // slides off astern-to-port as the ship pulls away.
 const CLIMB = { drop: 45, slide: 14 };
+
+// Where a fire burns in each room: on open floor, clear of the stations
+// and of the breach spots.
+export const FIRE_SPOTS = {
+  engine: { x: -9.6, z: 0.3 },
+  power: { x: -2.2, z: -1.0 },
+  helm: { x: 7.6, z: 0.9 },
+};
+
+// A fire: three flame cones, a flickering light, and an invisible column
+// to aim at (the flames are thin; the column makes "Douse" easy to hit).
+function buildFires(ship, box) {
+  const fires = {};
+  const colors = ['#e2574c', '#ff8f3a', '#ffd84d'];
+  for (const [room, spot] of Object.entries(FIRE_SPOTS)) {
+    const group = new THREE.Group();
+    group.position.set(spot.x, 0, spot.z);
+    group.visible = false;
+    const flames = colors.map((color, i) => {
+      const cone = new THREE.Mesh(
+        new THREE.ConeGeometry(0.42 - i * 0.11, 1.3 - i * 0.3, 7),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.92 })
+      );
+      cone.position.y = (1.3 - i * 0.3) / 2;
+      cone.raycast = () => {}; // aim at the column, not at the cones
+      group.add(cone);
+      return cone;
+    });
+    const light = new THREE.PointLight('#ff7a2e', 0, 6, 2);
+    light.position.y = 0.9;
+    group.add(light);
+    const target = new THREE.Mesh(box(1.1, 1.8, 1.1), new THREE.MeshBasicMaterial());
+    target.position.y = 0.9;
+    target.visible = false; // never drawn, still hit by rays
+    target.userData.fireInteract = { label: 'Douse the fire', action: 'douse', role: 'mechanic', room };
+    group.add(target);
+    ship.add(group);
+    fires[room] = { group, flames, light, target };
+  }
+  return fires;
+}
+
+// The storm wall: a dark bank of cloud with lightning in it, rolling in
+// at the bow while the pilot has time to warn the crew.
+function buildStormWall(ship) {
+  const group = new THREE.Group();
+  group.visible = false;
+  const cloud = new THREE.MeshBasicMaterial({ color: '#1b1d3a', transparent: true, opacity: 0.93, depthWrite: false });
+  for (let i = 0; i < 9; i++) {
+    const puff = new THREE.Mesh(new THREE.SphereGeometry(6 + (i % 3) * 2, 10, 8), cloud);
+    puff.position.set((i % 2) * 2, -4 + (i % 3) * 5, (i - 4) * 7);
+    puff.scale.set(0.5, 1, 1);
+    group.add(puff);
+  }
+  const bolt = new THREE.Mesh(
+    new THREE.BoxGeometry(0.3, 14, 0.6),
+    new THREE.MeshBasicMaterial({ color: '#ffd84d' })
+  );
+  bolt.position.set(-3, 2, -4);
+  bolt.rotation.x = 0.25;
+  group.add(bolt);
+  group.traverse((obj) => (obj.raycast = () => {}));
+  ship.add(group);
+  return { group, bolt };
+}
+
+// Every frame: fires flicker and offer "Douse"; the storm wall rolls in.
+export function updateHazards(world, state, now) {
+  for (const [room, fire] of Object.entries(world.fires)) {
+    const burning = state.phase === 'flight' && !!state.fires?.[room];
+    fire.group.visible = burning;
+    fire.target.userData.interact = burning ? fire.target.userData.fireInteract : null;
+    if (!burning) {
+      fire.light.intensity = 0;
+      continue;
+    }
+    // Half doused, half the fire.
+    const left = 1 - (state.fires[room].water ?? 0) / RULES.fireBuckets;
+    fire.flames.forEach((cone, i) => {
+      const f = 1 + Math.sin(now / (70 + i * 23) + i) * 0.12;
+      cone.scale.set(f * (0.55 + left * 0.45), f * (0.6 + left * 0.4), f * (0.55 + left * 0.45));
+      cone.rotation.y = now / (400 + i * 150);
+    });
+    fire.light.intensity = (2.2 + Math.sin(now / 47) * 0.5) * (0.5 + left * 0.5);
+  }
+
+  const storm = world.storm;
+  const coming = state.phase === 'flight' && !!state.storm?.active;
+  storm.group.visible = coming;
+  if (coming) {
+    const share = state.storm.left / RULES.stormWarnSeconds; // 1 far .. 0 at the bow
+    storm.group.position.set(SHIP.length / 2 + 4 + share * 70, 3, 0);
+    storm.bolt.visible = Math.floor(now / 140) % 7 === 0;
+  }
+}
 
 // Which role works in which room, for painting the rooms in role colours.
 const ROOM_ROLE = { engine: 'mechanic', power: 'engineer', helm: 'pilot' };

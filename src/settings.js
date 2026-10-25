@@ -19,6 +19,12 @@ export const ACTIONS = [
   { id: 'drop', label: 'Drop item' },
   { id: 'bell', label: 'Ring bell (pilot)' },
   { id: 'callout', label: 'Call out' },
+  { id: 'camera', label: 'Switch camera (first / third person)' },
+  { id: 'lookAround', label: 'Look at yourself (hold)' },
+  { id: 'wave', label: 'Wave' },
+  { id: 'flyDown', label: 'Fly down (double-tap jump to fly)' },
+  { id: 'talk', label: 'Push-to-talk (hold)' },
+  { id: 'mute', label: 'Mute microphone' },
 ];
 
 const DEFAULT_KEYS = {
@@ -31,10 +37,16 @@ const DEFAULT_KEYS = {
   drop: 'Mouse2',
   bell: 'KeyF',
   callout: 'KeyQ',
+  camera: 'KeyC',
+  lookAround: 'AltLeft',
+  wave: 'KeyG',
+  flyDown: 'ShiftLeft',
+  talk: 'KeyV',
+  mute: 'KeyM',
 };
 
 // Where an action goes when its default key is already taken.
-const SPARE_KEYS = ['KeyR', 'KeyG', 'KeyT', 'KeyZ', 'KeyX', 'KeyC', 'KeyV', 'KeyB'];
+const SPARE_KEYS = ['KeyR', 'KeyT', 'KeyZ', 'KeyX', 'KeyV', 'KeyB', 'KeyN', 'KeyH'];
 
 // Esc always frees the mouse (the browser insists); the rest would close
 // the game, reload it or open the browser's own tools.
@@ -43,10 +55,17 @@ const RESERVED = ['Escape', 'F5', 'F11', 'F12', 'MetaLeft', 'MetaRight', 'Contex
 const range = (min, max) => (v) => (Number.isFinite(v) ? Math.round(Math.min(max, Math.max(min, v))) : undefined);
 const oneOf = (...options) => (v) => (options.includes(v) ? v : undefined);
 const bool = (v) => (typeof v === 'boolean' ? v : undefined);
+const text = (max) => (v) => (typeof v === 'string' && v.length <= max ? v : undefined);
 
 const SPEC = {
   master: { def: 80, check: range(0, 100) },
   sfx: { def: 90, check: range(0, 100) },
+  voices: { def: 100, check: range(0, 100) }, // teammates' voices
+  micId: { def: '', check: text(300) }, // '' follows the system's default microphone
+  voiceMode: { def: 'open', check: oneOf('open', 'ptt') }, // open mic, or push-to-talk
+  micSensitivity: { def: 50, check: range(0, 100) }, // how quiet a voice still opens the mic; 100 = always open
+  micMuted: { def: false, check: bool },
+  voice3d: { def: true, check: bool }, // voices come from where people stand
   sensitivity: { def: 50, check: range(0, 100) },
   invertY: { def: false, check: bool },
   fov: { def: 80, check: range(60, 100) },
