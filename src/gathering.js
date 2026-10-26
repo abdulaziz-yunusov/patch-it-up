@@ -114,7 +114,7 @@ export function updateGathering(state, local, now, talking = () => false) {
     ? `Waiting for ${hostName} to head to the dock…`
     : full
       ? 'Everyone heads to the dock together. Pick your uniform at the lockers.'
-      : 'Your crew can join you at the dock at any time before you set sail.';
+      : 'Up to 3 crew. Friends can join at the dock, or even in the air; fewer can fly too.';
 
   // The host first, then joiners in seat order, then empty seats.
   const crew = [host, ...players.filter((p) => p.id !== 'host').sort((a, b) => a.id.localeCompare(b.id))];
@@ -123,7 +123,7 @@ export function updateGathering(state, local, now, talking = () => false) {
     const p = crew[i];
     const editable = p && isHost && p.id === local.id;
     // The editable row keeps its input while the host types in it.
-    const key = !p ? 'empty' : editable ? 'me-editable' : `${p.id}|${p.name}|${p.signal}|${p.id === local.id}`;
+    const key = !p ? 'empty' : editable ? 'me-editable' : `${p.id}|${p.name}|${p.signal}|${p.stars}|${p.id === local.id}`;
     if (rowKeys[i] === key && list.children[i]) continue;
     rowKeys[i] = key;
     const row = p ? crewRow(p, local, editable) : emptyRow();
@@ -155,7 +155,9 @@ function crewRow(p, local, editable) {
         : p.signal === 'lost'
           ? 'Joined · connection dropped, waiting for them'
           : `Joined · ${p.signal === 'weak' ? 'weak' : 'good'} connection`;
-    who.append(el('div', 'crew-name', me ? `${p.name} (you)` : p.name), el('div', 'crew-sub', sub));
+    // The stars in their log, earned on earlier flights.
+    const stars = p.stars ? ` · ${p.stars} ★` : '';
+    who.append(el('div', 'crew-name', me ? `${p.name} (you)` : p.name), el('div', 'crew-sub', sub + stars));
   }
 
   const badge =

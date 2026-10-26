@@ -261,6 +261,7 @@
       <div id="voiceHud"></div>
       <div id="topAlerts">
         <div id="alert" role="alert" hidden><strong id="alertTitle"></strong><span id="alertText"></span></div>
+        <div id="raidAlert" role="alert" hidden><strong id="raidTitle"></strong><span id="raidLine"></span></div>
         <div id="callout" role="status" hidden><span id="calloutWho"></span><strong id="calloutText"></strong></div>
       </div>
       <div id="lockOverlay">
@@ -275,7 +276,7 @@
       <div class="hud">
         <span data-key="move">WASD</span> move · mouse look · <span data-key="interact">E</span> use · <span data-key="callout">Q</span> call out · Esc frees the mouse<br />
         <span data-key="camera">C</span> third person · hold <span data-key="lookAround">Left Alt</span> to look at yourself · <span data-key="wave">G</span> wave · <span data-key="jump">Space</span> twice to fly, <span data-key="flyDown">Left Shift</span> down<br />
-        Take a uniform from a locker, then up the gangplank. The ship leaves when all three are aboard.<br />
+        Take a uniform from a locker, then up the gangplank. The ship leaves when the whole crew is aboard; short of three, once the host rings the dock bell.<br />
         Ring the bell, shout down the tube, try a hat at the mirror, kick the crates.
       </div>
     </div>
@@ -325,6 +326,7 @@
         <div class="panel-foot"><span id="budgetText">Budget 6</span><span id="budgetNote"></span></div>
         <div class="panel-foot supplies"><span id="plankText">Kit 3 planks</span><span id="fuseText">Fuses 3</span></div>
         <div id="hazardRow" class="panel-foot hazard" hidden><span id="hazardText"></span></div>
+        <div id="raidRow" class="panel-foot hazard" hidden><span id="raidText"></span></div>
       </div>
       <div class="hud">
         <span data-key="move">WASD</span> move · mouse look · <span data-key="interact">E</span> use · <span data-key="drop">Right click</span> drop · <span data-key="callout">Q</span> call out · <span data-key="camera">C</span> camera · Esc frees the mouse
@@ -333,9 +335,14 @@
 
     <!-- Filled in by step 7 (win or crash). -->
     <div id="result" class="screen panel-screen" hidden>
-      <div class="panel">
+      <div class="panel result-panel">
         <h2 id="resultTitle">Landed!</h2>
         <p id="resultDetail"></p>
+        <div id="resultStars" class="result-stars" role="img"></div>
+        <ul id="resultGoals" class="result-goals"></ul>
+        <p id="resultRecord" class="result-record"></p>
+        <ul id="resultUnlocks" class="result-news"></ul>
+        <div id="resultCrew" class="result-crew"></div>
         <div class="buttons">
           <button id="resultBack" type="button" class="primary">Back to dock</button>
         </div>

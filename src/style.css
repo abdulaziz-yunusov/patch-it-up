@@ -113,6 +113,158 @@ h2 {
   gap: 10px;
 }
 
+/* --- The result screen: stars, goals, records, crew titles -------------- */
+
+.result-panel {
+  width: min(92vw, 540px);
+  max-height: 94vh;
+  overflow-y: auto;
+}
+
+.result-panel #resultDetail {
+  margin: 4px 0 0;
+}
+
+.result-stars {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin: 10px 0 6px;
+}
+
+.star {
+  font-size: 54px;
+  line-height: 1;
+  color: #2d3459;
+  text-shadow: 0 3px 0 #1b2039;
+}
+
+.star.lit {
+  color: #ffd84d;
+  text-shadow: 0 3px 0 #b9892f, 0 0 18px rgba(255, 216, 77, 0.45);
+  animation: star-pop 0.45s ease-out backwards;
+}
+
+@keyframes star-pop {
+  0% {
+    transform: scale(0.2) rotate(-25deg);
+    opacity: 0;
+  }
+  70% {
+    transform: scale(1.25) rotate(6deg);
+    opacity: 1;
+  }
+  100% {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .star.lit {
+    animation: none;
+  }
+}
+
+.result-goals,
+.result-news {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+  text-align: left;
+}
+
+.result-goals li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.result-goals .mark {
+  flex: none;
+  width: 22px;
+  text-align: center;
+}
+
+.result-goals .done .mark {
+  color: #9fe3b8;
+}
+
+.result-goals .missed {
+  color: #c9cff0;
+}
+
+.result-goals .missed .mark {
+  color: #ff8f7a;
+}
+
+.result-goals .note {
+  font-size: 14px;
+  font-weight: 700;
+  color: #ffd58a;
+}
+
+.result-record {
+  margin: 6px 0;
+  font-size: 18px;
+  font-weight: 800;
+  color: #c9cff0;
+}
+
+.result-record.new {
+  color: #ffd84d;
+}
+
+.result-news li {
+  font-size: 15px;
+  font-weight: 800;
+  color: #c9cff0;
+}
+
+.result-news .opened {
+  color: #9fe3b8;
+}
+
+.result-crew {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0 18px;
+  padding: 12px 14px;
+  text-align: left;
+  background: #1b2039;
+  border-radius: 12px;
+}
+
+.crew-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.crew-title .dot {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.crew-title .who {
+  flex: none;
+  font-weight: 800;
+}
+
+.crew-title .what strong {
+  color: #ffd58a;
+}
+
 button {
   padding: 14px 20px;
   font: inherit;
@@ -955,10 +1107,6 @@ button.big {
   width: 3px;
   margin-left: -1px;
   background: #ffd58a;
-}
-
-.meter-gate[hidden] {
-  display: none;
 }
 
 .avatar.speaking {
@@ -1969,10 +2117,6 @@ legend.set-label {
   pointer-events: none;
 }
 
-#netNote[hidden] {
-  display: none;
-}
-
 .net-spinner {
   width: 14px;
   height: 14px;
@@ -2202,6 +2346,34 @@ legend.set-label {
 }
 
 #alertText {
+  font-size: calc(16px * var(--hud-scale, 1));
+  font-weight: 800;
+}
+
+/* Pirates: the same alarm card, in their black and red. */
+#raidAlert {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 26px;
+  color: #fff4dc;
+  background: #25202b;
+  border: 4px solid #8e2b2b;
+  border-radius: 14px;
+  box-shadow: 0 6px 0 #3b2516;
+  text-align: center;
+}
+
+#raidTitle {
+  font-family: 'Lilita One', 'Arial Black', sans-serif;
+  font-weight: 400;
+  font-size: calc(30px * var(--hud-scale, 1));
+  line-height: 1.05;
+  color: #ff8f7a;
+}
+
+#raidLine {
   font-size: calc(16px * var(--hud-scale, 1));
   font-weight: 800;
 }

@@ -12,8 +12,9 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DOCK, GANGPLANK, createLabel, drawLabel } from './world.js';
-import { HATS, ROUTES, propHomes } from './state.js';
+import { HATS, ROUTES, RULES, propHomes } from './state.js';
 import { play } from './sound.js';
+import { hatsOpen, routeNeeds, routeOpen, routeRecord, starString, totalStars } from './log.js';
 
 const MODEL_URL = `${import.meta.env.BASE_URL}models/waiting_room.glb`;
 const OFFSET_Z = DOCK.zNear - 10; // the model's ship-side edge is at Blender x = 10
@@ -147,6 +148,8 @@ export async function loadDockModel(world) {
     }
   }
   world.routeInteract = STATIONS.find((s) => s.interact.action === 'route').interact;
+  world.bellInteract = STATIONS.find((s) => s.interact.action === 'bell').interact;
+  world.mirrorInteract = STATIONS.find((s) => s.interact.action === 'hat').interact;
 
   // Route name painted on the route board, facing the spawn points.
   const routeMesh = model.getObjectByName('station_route_board');
@@ -213,7 +216,7 @@ export async function loadDockModel(world) {
 // --- drawing the toys every frame ---------------------------------------
 
 const _sphere = new THREE.Sphere(new THREE.Vector3(), 0.45);
-const seen = { bell: null, shout: null, lampsOn: null, route: null, hat: null, kicks: {} };
+const seen = { bell: null, shout: null, lampsOn: null, route: null, hat: null, shortHanded: null, kicks: {} };
 let swingUntil = 0;
 let toastUntil = 0;
 const toastEl = () => document.getElementById('toast');
@@ -283,13 +286,46 @@ export function updateDock(world, state, local, now) {
       play('ui_button_click', 0.6);
       toast(`Route: ${ROUTES[state.route].name}`);
     }
-    if (world.routeLabel) drawLabel(world.routeLabel, `Route: ${ROUTES[state.route].name}`);
     seen.route = state.route;
   }
-  // Everyone may look at the route board; only the host may change it.
+  // The board shows the route and your best on it, from your own log.
+  const route = ROUTES[state.route] ?? ROUTES[0];
+  if (world.routeLabel) drawLabel(world.routeLabel, `${route.name}  ${starString(routeRecord(state.route).best)}`);
+  // Everyone may look at the route board; only the host may change it, to
+  // a route the host's log has opened.
   if (world.routeInteract) {
-    world.routeInteract.label = local.isHost ? 'Change route' : 'Only the host picks the route';
-    world.routeInteract.action = local.isHost ? 'route' : null;
+    const shut = ROUTES.findIndex((_, i) => !routeOpen(i));
+    const others = ROUTES.some((_, i) => i !== state.route && routeOpen(i));
+    world.routeInteract.label = !local.isHost
+      ? 'Only the host picks the route'
+      : others
+        ? 'Change route'
+        : `${ROUTES[shut]?.name ?? 'More routes'}: ${routeNeeds(shut)}`;
+    world.routeInteract.action = local.isHost && others ? 'route' : null;
+  }
+
+  // The bell: for a host short of a full crew, the word to cast off.
+  const crew = Object.keys(state.players).length;
+  if (world.bellInteract) {
+    const short = local.isHost && state.phase === 'lobby' && crew < RULES.maxPlayers;
+    const go = crew === 1 ? 'fly solo' : `cast off with ${crew} crew`;
+    world.bellInteract.label = !short
+      ? 'Ring the bell'
+      : state.shortHanded
+        ? 'Ring the bell: wait for a full crew after all'
+        : `Ring the bell: ${go}`;
+  }
+  if (state.shortHanded !== seen.shortHanded) {
+    if (seen.shortHanded !== null && state.phase === 'lobby' && crew < RULES.maxPlayers) {
+      toast(state.shortHanded ? `Casting off with ${crew} crew: all aboard!` : 'Waiting for a full crew');
+    }
+    seen.shortHanded = state.shortHanded;
+  }
+
+  // The mirror: as many hats as your log has opened.
+  if (world.mirrorInteract) {
+    const open = hatsOpen(totalStars()) - 1; // not counting no hat
+    world.mirrorInteract.label = `Try on a hat (${open} of ${HATS.length - 1} unlocked)`;
   }
 
   const myHat = state.players[local.id]?.hat ?? 0;
@@ -307,6 +343,6 @@ export function updateDock(world, state, local, now) {
 
 // Back at the menu: forget what was seen, so the next session starts quiet.
 export function resetDockEffects() {
-  seen.bell = seen.shout = seen.lampsOn = seen.route = seen.hat = null;
+  seen.bell = seen.shout = seen.lampsOn = seen.route = seen.hat = seen.shortHanded = null;
   seen.kicks = {};
 }

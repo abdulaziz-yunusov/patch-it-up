@@ -14,14 +14,17 @@ import { Net, makeCode } from './network.js';
 import { startPulse } from './pulse.js';
 import { play } from './sound.js';
 import {
+  ROLES,
   RULES,
   ROUTES,
   SPAWNS,
   SPAWN_YAW,
   applySnapshot,
+  livePower,
   local,
   newPlayer,
   playerCount,
+  roleTaken,
   snapshot,
   state,
 } from './state.js';
@@ -35,6 +38,9 @@ import { keyLabel, moveLabel, onSettingsChange, settings } from './settings.js';
 import { closeSettings, initSettings, isSettingsOpen, openSettings } from './settingsScreen.js';
 import { PALETTES, fillRoleKey, inkFor } from './roleLook.js';
 import { createRain } from './rain.js';
+import { buildPirates, lastPirateHit, resetPirateEffects, updatePirates } from './pirates.js';
+import { totalStars } from './log.js';
+import { showResult } from './results.js';
 import { resetSubtitles, updateSubtitles } from './subtitles.js';
 import { endVoice, handleSignal, hostLink, hostUnlink, initVoice, micState, startMic, stopMic, voiceStatus } from './voice.js';
 import { hasVoice, isSpeaking, outputRoute, placeVoices } from './audio.js';
@@ -70,6 +76,7 @@ loadDockModel(world); // swaps the coded dock for the Blender one when it arrive
 loadHelmModel(world); // furnishes the pilot's cabin
 loadPowerModel(world); // furnishes the engineer's power room
 loadEngineModel(world); // furnishes the mechanic's engine room
+buildPirates(world); // the sky pirates' ship, crew, grapples and boarders
 
 const player = new LocalPlayer({ ship, camera, colliders: world.colliders });
 const crew = new RemoteCrew(ship, RULES.stateHz);
@@ -101,8 +108,6 @@ const furnaceText = document.getElementById('furnaceText');
 const takeoffTitle = document.getElementById('takeoffTitle');
 const takeoffJob = document.getElementById('takeoffJob');
 const flash = document.getElementById('flash');
-const resultTitle = document.getElementById('resultTitle');
-const resultDetail = document.getElementById('resultDetail');
 const resultBack = document.getElementById('resultBack');
 const lockOverlay = document.getElementById('lockOverlay');
 const statusLine = document.getElementById('status');
@@ -118,6 +123,8 @@ const KIT_INTERACT = world.kit.userData.interact;
 let sessionActive = false;
 let inWorld = false;
 let againRequested = false;
+let flownFlight = -1; // the last flight this browser was aboard for: only that one goes in its log
+let shownResult = -1; // the flight whose result screen is up
 let seenOpened = 0; // to flash when a new hole tears
 let flashUntil = 0;
 
@@ -179,11 +186,13 @@ net.onHello = (name, token) => {
   let index = 1;
   while (state.players[`p${index}`]) index += 1;
   const seated = newPlayer(`p${index}`, cleanName(name), index);
-  // Late, with the dock already gone: in through the cargo door.
+  // Late, with the dock already gone: in through the cargo door, wearing
+  // whichever uniform nobody has (the lockers stayed on the dock).
   if (state.phase !== 'gathering' && state.phase !== 'lobby') {
     seated.x = 0;
     seated.y = PLAYER.radius;
     seated.z = -SHIP.width / 2 + 1;
+    seated.role = ROLES.find((role) => !roleTaken(role)) ?? 'crew';
   }
   state.players[seated.id] = seated;
   bodies.set(seated.id, createBody(seated.x, seated.y, seated.z));
@@ -221,6 +230,8 @@ net.onInput = (id, raw) => {
   inputs.set(id, input);
   // Their microphone, for everyone's voice list: on, muted, or none.
   state.players[id].mic = ['on', 'muted', 'none'].includes(raw.mic) ? raw.mic : 'none';
+  // The stars in their own log: the mirror offers the hats those open.
+  state.players[id].stars = Math.max(0, Math.min(99, Math.floor(finite(raw.stars, 0))));
   const now = performance.now();
   lastHeard.set(id, now);
   if (Number.isFinite(raw.seq)) acks.set(id, { seq: raw.seq, at: now });
@@ -534,6 +545,9 @@ function forgetSeats() {
 function startSession() {
   sessionActive = true;
   inWorld = false;
+  // Flights count from 1 again in every session.
+  flownFlight = -1;
+  shownResult = -1;
   seenOpened = state.opened;
   syncPhaseUi();
 }
@@ -558,13 +572,13 @@ function syncPhaseUi() {
   playUi.hidden = !playing;
   if (state.phase === 'result') {
     if (player.controls.isLocked) player.controls.unlock();
-    const holes = state.patched === 1 ? '1 breach' : `${state.patched} breaches`;
-    const ending = {
-      landed: ['Landed!', `Three minutes in the air, ${holes} patched.`],
-      burned: ['Burned down', `Fire took all three rooms. ${holes} patched before the end.`],
-    }[state.result] ?? ['The ship went down', `${holes} patched before the altitude ran out.`];
-    resultTitle.textContent = ending[0];
-    resultDetail.textContent = ending[1];
+    if (shownResult !== state.flight) {
+      shownResult = state.flight;
+      showResult(state, {
+        flew: flownFlight === state.flight,
+        colorOf: (role) => ROLE_COLORS[role] ?? ROLE_COLORS.crew,
+      });
+    }
     // Only the host sends the crew back down; joiners wait for them.
     const waiting = sessionActive && !local.isHost;
     resultBack.disabled = waiting;
@@ -599,6 +613,8 @@ function leaveShip(message = '', { keepSeat = false } = {}) {
   resetHelmEffects();
   resetPowerEffects();
   resetEngineEffects();
+  resetPirateEffects(world);
+  raidAlert.hidden = true;
   resetGathering();
   resetSubtitles();
   seenCallout = null;
@@ -676,7 +692,10 @@ function queue(input) {
 
 function hostTick(dt, now) {
   const me = state.players[local.id];
-  if (me) me.mic = micState();
+  if (me) {
+    me.mic = micState();
+    me.stars = totalStars();
+  }
   for (const id of Object.keys(state.players)) {
     if (id === local.id) continue;
     const seated = state.players[id];
@@ -739,7 +758,7 @@ function hostTick(dt, now) {
     // The pilot's bell key rings the cabin bell from anywhere aboard.
     if (input.bell) {
       input.bell = false;
-      if (seated.role === 'pilot') game.ringCabinBell();
+      if (game.covers(seated, 'pilot')) game.ringCabinBell();
     }
     if (input.callout) {
       input.callout = false;
@@ -769,7 +788,8 @@ function hostTick(dt, now) {
   // Holding E on a breach: the others see you kneel and hammer.
   for (const seated of Object.values(state.players)) {
     const hold = hostInteractions.holds.get(seated.id);
-    seated.act = hold?.target?.userData.interact?.action === 'patch' ? 'patch' : null;
+    const holding = hold?.target?.userData.interact?.action;
+    seated.act = holding === 'patch' || holding === 'cutHook' ? 'patch' : null;
   }
 
   player.syncView(); // the host's camera follows its own authoritative body
@@ -900,7 +920,12 @@ function updateTakeoff() {
   takeoffTitle.textContent =
     state.takeoff < 1.5 ? 'Casting off!' : !hatchShut(state) ? 'Climbing to cruising height' : 'Hatch shut. Brace yourselves!';
   const role = state.players[local.id]?.role;
-  takeoffJob.textContent = JOBS[role]?.() ?? '';
+  const empty = ROLES.filter((r) => !roleTaken(r));
+  const crew = playerCount();
+  let job = JOBS[role]?.() ?? '';
+  if (crew === 1) job = 'Flying solo: every station is yours, and the sky goes easier on a crew of one.';
+  else if (empty.length) job += ` Short-handed: nobody is the ${empty.join(' or ')}, so that job is anyone's.`;
+  takeoffJob.textContent = job;
 }
 
 // The ship panel: each tube's units, how hot it runs, a blown fuse; the
@@ -945,13 +970,62 @@ function updateShipPanel() {
   hazardRow.hidden = !fires.length;
   if (fires.length) {
     const [room, fire] = fires.sort((a, b) => b[1].spread - a[1].spread)[0];
-    const left = Math.max(0, Math.ceil(RULES.fireSpreadSeconds - fire.spread));
+    const left = Math.max(0, Math.ceil(game.fireSpreadSeconds() - fire.spread));
     const more = fires.length > 1 ? ` (+${fires.length - 1} more)` : '';
     hazardText.textContent = `Fire: ${game.ROOM_LABEL[room]}${more} · spreads in ${left} s`;
   }
 }
 const hazardRow = document.getElementById('hazardRow');
 const hazardText = document.getElementById('hazardText');
+
+// Pirates alongside, on the ship panel: what is holding on, and how long
+// before they take their loot and go.
+const raidRow = document.getElementById('raidRow');
+const raidText = document.getElementById('raidText');
+function updateRaidRow() {
+  const raid = state.raid;
+  raidRow.hidden = raid.phase !== 'alongside';
+  if (raidRow.hidden) return;
+  const hooks = Object.keys(raid.hooks).length;
+  const aboard = Object.keys(raid.boarders).length;
+  const left = Math.max(0, Math.ceil(RULES.raidMaxSeconds - raid.t));
+  const parts = [`${hooks} grapple${hooks === 1 ? '' : 's'}`];
+  if (aboard) parts.push(`${aboard} aboard`);
+  raidText.textContent = `Pirates: ${parts.join(' · ')} · loot in ${left} s`;
+}
+
+// The pirate alarm. Like the storm wall, only the pilot sees their ship
+// coming (through the window, or the telescope) and has to tell the crew;
+// once it is alongside, everyone is told what to do about it.
+const raidAlert = document.getElementById('raidAlert');
+const raidTitle = document.getElementById('raidTitle');
+const raidLine = document.getElementById('raidLine');
+function updateRaidAlert() {
+  const raid = state.raid;
+  const pilot = game.covers(state.players[local.id], 'pilot');
+  const key = keyLabel(settings.keys.interact);
+  const side = raid.side > 0 ? 'starboard' : 'port';
+  let title = '';
+  let line = '';
+  if (state.phase === 'flight' && raid.phase === 'sighted' && pilot) {
+    const engines = livePower(0) >= RULES.raidOutrunEngines;
+    title = `Pirates to ${side}!`;
+    line = engines
+      ? `Outrunning them: ${Math.max(0, Math.ceil(RULES.raidOutrun - raid.outrun))} s more at full engines`
+      : `Alongside in ${Math.max(0, Math.ceil(RULES.raidApproach - raid.t))} s · engines to ${RULES.raidOutrunEngines} to outrun them`;
+  } else if (state.phase === 'flight' && raid.phase === 'alongside') {
+    const hooks = Object.keys(raid.hooks).length;
+    const aboard = Object.keys(raid.boarders).length;
+    title = aboard ? 'Pirates aboard!' : `Pirates to ${side}!`;
+    const jobs = [];
+    if (hooks) jobs.push(`hold ${key} on a grapple to cut it`);
+    if (aboard) jobs.push(`tap ${key} to shove a boarder overboard`);
+    line = jobs.length ? jobs.join(' · ') : `Shields to ${RULES.raidShieldBlock} stop their cannonballs`;
+  }
+  raidAlert.hidden = !title;
+  if (raidTitle.textContent !== title) raidTitle.textContent = title;
+  if (raidLine.textContent !== line) raidLine.textContent = line;
+}
 
 // The storm alarm. The pilot sees the wall coming and is told to ring the
 // bell; everyone else only hears about it once the bell rings. Then a
@@ -964,7 +1038,7 @@ let stormJolt = 0; // when the last hit landed, for the camera jolt
 function updateStormAlert(now) {
   const storm = state.storm;
   const me = state.players[local.id];
-  const pilot = me?.role === 'pilot';
+  const pilot = game.covers(me, 'pilot'); // the pilot, or anyone if nobody is
   const showing = state.phase === 'flight' && storm.active && (pilot || storm.warned);
   alertBox.hidden = !showing;
   if (showing) {
@@ -1093,26 +1167,34 @@ function updateBanner() {
     banner.textContent = atRamp ? 'Grab a uniform first' : 'Take a uniform from a locker';
     return;
   }
-  if (crewList.length < RULES.maxPlayers) {
-    banner.textContent = `Waiting for the crew (${crewList.length}/${RULES.maxPlayers})`;
+  const crew = crewList.length;
+  const short = crew < RULES.maxPlayers;
+  if (state.countdown !== null) {
+    banner.textContent = `Casting off in ${Math.ceil(state.countdown)}${short ? ` with ${crew} crew` : ''}`;
     return;
   }
-  if (state.countdown === null) {
-    const lost = crewList.find((p) => p.signal === 'lost');
-    banner.textContent = lost
-      ? `Waiting for ${lost.name} to reconnect`
-      : crewList.some((p) => p.role === 'crew')
-        ? 'Waiting for everyone to dress'
-        : 'All aboard: up the gangplank';
+  const lost = crewList.find((p) => p.signal === 'lost');
+  if (lost) {
+    banner.textContent = `Waiting for ${lost.name} to reconnect`;
     return;
   }
-  banner.textContent = `Casting off in ${Math.ceil(state.countdown)}`;
+  // Short of three: the host's ring of the dock bell says go anyway.
+  if (short && !state.shortHanded) {
+    const go = crew === 1 ? 'fly solo' : `cast off with ${crew}`;
+    banner.textContent = local.isHost
+      ? `${crew} of ${RULES.maxPlayers} crew · wait for more, or ring the dock bell to ${go}`
+      : `${crew} of ${RULES.maxPlayers} crew · ${state.players.host?.name ?? 'The host'} can ring the dock bell to ${go}`;
+    return;
+  }
+  banner.textContent = crewList.some((p) => p.role === 'crew') ? 'Waiting for everyone to dress' : 'All aboard: up the gangplank';
 }
 
 function updateStatus() {
   const me = state.players[local.id];
   if (!me) return;
-  const role = me.role === 'crew' ? 'No uniform' : me.role[0].toUpperCase() + me.role.slice(1);
+  const away = state.phase === 'takeoff' || state.phase === 'flight'; // at the dock, uniforms are still being picked
+  const extra = me.role === 'crew' || !away ? [] : ROLES.filter((r) => r !== me.role && !roleTaken(r));
+  const role = me.role === 'crew' ? 'No uniform' : [me.role, ...extra].join(' + ').replace(/^./, (c) => c.toUpperCase());
   const holding = me.fuse
     ? 'a spare fuse'
     : me.bucket
@@ -1152,6 +1234,7 @@ function step(now) {
   const dt = Math.min((now - lastStepAt) / 1000, 0.1); // a stall must not teleport anyone
   lastStepAt = now;
   if (!sessionActive) return dt;
+  if (state.phase === 'flight') flownFlight = state.flight;
   syncPhaseUi();
 
   if (state.phase === 'gathering') {
@@ -1212,6 +1295,7 @@ function joinerTick(input, dt, now, walking) {
   queue(input);
   pending.seq = inputSeq + 1;
   pending.mic = micState();
+  pending.stars = totalStars();
   if (net.sendInput(pending, now)) {
     inputSeq += 1;
     sentAt.set(inputSeq, now);
@@ -1226,8 +1310,29 @@ function joinerTick(input, dt, now, walking) {
 let lastFrameAt = performance.now();
 startPulse(30, () => {
   const now = performance.now();
-  if (now - lastFrameAt > 200 && now - lastStepAt > 20) step(now);
+  if (now - lastFrameAt > 200 && now - lastStepAt > 20) {
+    const dt = step(now);
+    // The host's checks of who can use what look at the scene (a breach's
+    // prompt, a grapple to cut, a boarder to shove): keep it up to date
+    // with the state while nothing is drawn, or a joiner could not patch a
+    // hole that tore open while the host looked away.
+    if (sessionActive && local.isHost) syncWorld(now, dt);
+  }
 });
+
+// Every browser sets up the scene from the state it has: what is where,
+// and what can be used. Drawing it is the loop's job.
+function syncWorld(now, dt) {
+  applyState(world, state, state.players[local.id]?.atWheel ?? false);
+  updateKit();
+  updateDock(world, state, local, now);
+  updateHelm(world, state, { camera, view, player, now, dt });
+  updatePower(world, state, { now, dt });
+  updateEngineRoom(world, state, { now, dt });
+  updateHazards(world, state, now);
+  updatePirates(world, state, { now, dt, me: state.players[local.id] });
+  updateHeldItems();
+}
 
 const clock = new THREE.Clock();
 function loop() {
@@ -1243,7 +1348,7 @@ function loop() {
   const rocking = (state.phase === 'result' ? 0 : climbed) * motion;
   const noseUp = state.phase === 'takeoff' ? Math.sin(climbed * Math.PI) * 0.05 * motion : 0;
   const lurch = state.phase === 'takeoff' ? Math.max(0, 1 - state.takeoff / 1.2) * Math.sin(t * 40) * 0.012 * motion : 0;
-  const jolted = (now - stormJolt) / 1000;
+  const jolted = (now - Math.max(stormJolt, lastPirateHit())) / 1000; // a storm wall, or a cannonball
   const jolt = jolted < 1.2 ? Math.sin(jolted * 30) * 0.05 * (1 - jolted / 1.2) * motion : 0;
   ship.rotation.z = Math.sin(t * 0.8) * 0.06 * rocking + noseUp + lurch + jolt;
   ship.rotation.x = Math.sin(t * 0.5) * 0.03 * rocking;
@@ -1265,7 +1370,11 @@ function loop() {
     updateSubtitles(state, now, settings.subtitles, subtitleLine);
     updateCallout(now);
     updateStormAlert(now);
-    if (state.phase === 'flight') updateShipPanel();
+    updateRaidAlert();
+    if (state.phase === 'flight') {
+      updateShipPanel();
+      updateRaidRow();
+    }
   } else {
     orbitShip(t);
   }
@@ -1277,15 +1386,7 @@ function loop() {
     colorOf: (role) => ROLE_COLORS[role] ?? ROLE_COLORS.crew,
   });
 
-  // Every browser draws the scene from the state it has.
-  applyState(world, state, state.players[local.id]?.atWheel ?? false);
-  updateKit();
-  updateDock(world, state, local, now);
-  updateHelm(world, state, { camera, view, player, now, dt });
-  updatePower(world, state, { now, dt });
-  updateEngineRoom(world, state, { now, dt });
-  updateHazards(world, state, now);
-  updateHeldItems();
+  syncWorld(now, dt);
   const airborne = state.phase === 'takeoff' || state.phase === 'flight';
   rain.update(dt, settings.rain && sessionActive && inWorld && airborne);
   // The Blender dock swaps in its own lockers once it loads: paint those too.

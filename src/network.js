@@ -19,6 +19,20 @@ import Peer from 'peerjs';
 import { RULES } from './state.js';
 
 const PREFIX = 'patchitup-';
+
+// The signalling server that introduces players (the game itself runs peer
+// to peer). The free public PeerJS server unless a build names another:
+// VITE_PEER_HOST, and optionally VITE_PEER_PORT, VITE_PEER_PATH and
+// VITE_PEER_SECURE ('false' for plain ws://), e.g. in a .env file.
+const env = import.meta.env ?? {};
+const SERVER = env.VITE_PEER_HOST
+  ? {
+      host: env.VITE_PEER_HOST,
+      port: Number(env.VITE_PEER_PORT) || 443,
+      path: env.VITE_PEER_PATH || '/',
+      secure: env.VITE_PEER_SECURE !== 'false',
+    }
+  : {};
 const WORDS = ['CRAB', 'KITE', 'MOTH', 'BOLT', 'REEF', 'WREN', 'GULL', 'TIDE'];
 const OPEN_TIMEOUT_MS = 10000; // reaching the signalling server
 const JOIN_TIMEOUT_MS = 12000; // finding the ship and opening a line to it
@@ -274,7 +288,7 @@ export class Net {
   open(id) {
     this.close({ bye: false });
     return new Promise((resolve, reject) => {
-      const peer = id ? new Peer(id, { debug: 0 }) : new Peer({ debug: 0 });
+      const peer = id ? new Peer(id, { debug: 0, ...SERVER }) : new Peer({ debug: 0, ...SERVER });
       this.peer = peer;
       const fail = (err) => {
         clearTimeout(giveUp);

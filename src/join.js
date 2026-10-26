@@ -86,7 +86,7 @@ export function joinFailed(message, code) {
   if (message === 'No ship found') {
     showError(`No ship found with code ${code}`, 'Check it with your host. Codes are 4 letters, a dash and a number.');
   } else if (message === 'Ship is full') {
-    showError(`Ship ${code} is full`, 'Patch It Up needs exactly 3 crew. If someone leaves, a seat opens up.');
+    showError(`Ship ${code} is full`, 'A ship takes 3 crew at most. If someone leaves, a seat opens up.');
   } else {
     showError("Couldn't reach the ship", 'Pause your ad blocker for this site, or try another network.');
   }

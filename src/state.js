@@ -59,11 +59,38 @@ export const RULES = {
   stormAltitudeLoss: 5,
   stormSafeShields: 2, // each shield unit short of this tears a hole at impact
 
+  // Sky pirates (a raid or two a flight). The pilot spots their ship and
+  // engines can outrun it; alongside it fires on the hull, throws grapples
+  // that drag the ship down, and sends a boarder down any grapple left too
+  // long. Cut every grapple and throw every boarder off, and they give up.
+  raidFirstAt: 45, // seconds into the flight before the first can come
+  raidApproach: 15, // seconds from sighting to alongside
+  raidOutrunEngines: 3, // engines at this many units during the approach...
+  raidOutrun: 9, // ...for this many seconds, and they fall behind
+  raidCannonEvery: 7, // seconds between cannonballs
+  raidShieldBlock: 3, // shields at this many units stop a cannonball
+  raidFireChance: 0.25, // a cannonball through the hull may start a fire
+  raidHookEvery: 3, // seconds between grapples biting into the hull
+  hookDrag: 0.5, // altitude per cent per second, for each grapple
+  hookPull: 0.04, // how hard each grapple drags the helm toward the pirates
+  cutSeconds: 2, // hold the interact key this long to cut a grapple
+  boardAfter: 12, // a grapple left this long sends a boarder down it
+  maxBoarders: 2,
+  shovesToRepel: 3, // shoves to put a boarder overboard (one bucket does it too)
+  raidMaxSeconds: 60, // alongside this long, they take their loot and go
+  raidLeaveSeconds: 6, // the pirate ship sailing off
+  lootFuses: 2, // spare fuses they take (and every plank in the kit)
+
   maxPerTube: 4,
   patchSeconds: 2.5,
   steerRate: 0.9,
   reach: 2.5, // metres you can interact from
   maxPlayers: 3,
+  // Fewer than three can fly too: the host rings the dock bell to cast off
+  // short-handed, a role nobody wears is anyone's job, and the hazards come
+  // at this pace for the crew aboard (1 = the full three-crew flight).
+  crewPace: [1, 0.4, 0.7, 1], // by crew size; index 0 unused
+  landingGoal: 50, // the second star: land with at least this much altitude
   inputHz: 30, // joiner -> host
   stateHz: 20, // host -> all
   timeoutMs: 8000, // silence this long means that browser's line is dead
@@ -79,13 +106,21 @@ export const RULES = {
 };
 
 // The route board at the dock. The host picks; the flight's pace follows.
+// raids: pirate raids a flight at most; hooks: grapples each raid throws;
+// raidEvery: seconds after one raid ends before the next can be sighted.
+// challenge: the route's third star (log.js); open: what unlocks it in the
+// host's log (null: always open).
 export const ROUTES = [
-  { name: 'Calm Cliffs', breachEvery: [10, 18], rockEvery: 12, stormEvery: [55, 80] },
-  { name: 'Thunder Pass', breachEvery: [6, 11], rockEvery: 8, stormEvery: [35, 55] },
+  { name: 'Calm Cliffs', breachEvery: [10, 18], rockEvery: 12, stormEvery: [55, 80], raids: 1, hooks: 2, raidEvery: [60, 80], challenge: 'noSpread', open: null },
+  { name: 'Thunder Pass', breachEvery: [6, 11], rockEvery: 8, stormEvery: [35, 55], raids: 2, hooks: 3, raidEvery: [30, 45], challenge: 'allBraced', open: { landedOn: 0 } },
+  // Pirate waters: fewer storms, raid after raid.
+  { name: 'Skull Straits', breachEvery: [9, 15], rockEvery: 11, stormEvery: [75, 100], raids: 3, hooks: 3, raidEvery: [12, 20], challenge: 'noLoot', open: { stars: 4 } },
 ];
 
-// What the dock mirror can put on your head. Index 0 is bare.
+// What the dock mirror can put on your head. Index 0 is bare. HAT_STARS:
+// how many stars in your log open each one.
 export const HATS = ['no hat', 'beanie', 'captain hat', 'top hat', 'propeller cap'];
+export const HAT_STARS = [0, 0, 2, 5, 8];
 
 // Sailor lines for the speaking tube, until there is real voice chat.
 export const SHOUTS = [
@@ -135,6 +170,11 @@ export const state = {
   callout: { count: 0, id: '', name: '', role: '', text: '' }, // the last call-out
   fires: { engine: null, power: null, helm: null }, // room -> { burn, spread, water } while alight
   storm: { active: false, left: 0, warned: false, hits: 0 }, // a storm wall on its way; hits counts impacts
+  raid: newRaid(), // the sky pirates: see newRaid()
+  shortHanded: false, // the host rang the dock bell: cast off without a full crew
+  flight: 0, // counts up at every cast-off, so each flight is logged once
+  log: newLog(), // what happened this flight, for its stars: see newLog()
+  stats: {}, // player id -> what they did this flight, for the crew's titles (log.js)
   heat: RULES.heatStart, // the furnace, 0 (out) .. 1 (roaring)
   climb: 0, // per cent per second altitude is changing, for the HUD
   breaches: {}, // id -> true while that hole is open
@@ -159,6 +199,39 @@ export const state = {
   props: {}, // name -> { x, y, z, ry, vx, vy, vz, spin, moving } once kicked
 };
 
+// A pirate raid, as everyone draws it. phase: 'none', 'sighted' (on its
+// way), 'alongside', 'leaving' (with ending 'outrun', 'repelled' or
+// 'looted'). side: 1 starboard (+z), -1 port. t: seconds in this phase.
+// hooks: id -> { spot, held } (spot = which room's wall: HOOK_SPOTS in
+// world.js). boarders: id -> { kind, x, y, z, yaw, shoves, waves }.
+// Counters (shots, blocked, count, overboard) survive a lost packet.
+export function newRaid() {
+  return {
+    phase: 'none',
+    side: 1,
+    t: 0,
+    outrun: 0,
+    shots: 0,
+    blocked: 0,
+    hooks: {},
+    thrown: 0,
+    boarders: {},
+    serial: 0,
+    ending: '',
+    count: 0,
+    overboard: 0,
+    repelled: 0,
+  };
+}
+
+// What a flight's stars are judged on, kept by the host as it flies.
+// spread: fires that reached another room; thrown: crew a storm wall threw
+// about unbraced; looted: raids that got away with the goods; raids: raids
+// sighted; rockHits: rocks through the hull.
+export function newLog() {
+  return { spread: 0, thrown: 0, looted: 0, raids: 0, rockHits: 0 };
+}
+
 // Who this browser is. Never sent anywhere.
 export const local = { id: null, name: 'Deckhand', isHost: false, code: '', token: null }; // token: claims our seat back after a drop
 
@@ -177,6 +250,7 @@ export function newPlayer(id, name, index) {
     signal: 'good', // 'weak' when the host has not heard from them lately, 'lost' while it waits for them to reconnect
     fuse: false, // carrying a spare fuse from the engine room
     bucket: false, // carrying a bucket of water
+    stars: 0, // stars in their own log: opens hats at the mirror
   };
 }
 
@@ -196,6 +270,11 @@ export function snapshot() {
     callout: state.callout,
     fires: state.fires,
     storm: state.storm,
+    raid: state.raid,
+    shortHanded: state.shortHanded,
+    flight: state.flight,
+    log: state.log,
+    stats: state.stats,
     heat: state.heat,
     climb: state.climb,
     breaches: state.breaches,
@@ -234,6 +313,11 @@ export function applySnapshot(s) {
   state.callout = s.callout ?? state.callout;
   state.fires = s.fires ?? state.fires;
   state.storm = s.storm ?? state.storm;
+  state.raid = s.raid ?? state.raid;
+  state.shortHanded = s.shortHanded ?? false;
+  state.flight = s.flight ?? state.flight;
+  state.log = s.log ?? state.log;
+  state.stats = s.stats ?? state.stats;
   state.heat = s.heat ?? state.heat;
   state.climb = s.climb ?? 0;
   state.breaches = s.breaches ?? state.breaches;

@@ -58,6 +58,17 @@ export const BREACH_SPOTS = [
   { id: 'h2', room: 'helm', x: 7, z: -1.2 },
 ];
 
+// Where a pirate grapple can bite: one spot per room on each side wall, at
+// head height, on bare wall clear of the furniture and the cargo door.
+// port is the -z wall, starboard the +z one.
+export const HOOK_SPOTS = [
+  { room: 'engine', port: -10.2, starboard: -9.3 },
+  { room: 'power', port: -2.6, starboard: -1.9 },
+  { room: 'helm', port: 8.2, starboard: 6.4 },
+];
+export const HOOK_HEIGHT = 1.8;
+export const hookX = (spot, side) => (side > 0 ? HOOK_SPOTS[spot].starboard : HOOK_SPOTS[spot].port);
+
 // One locker per role, in role order, along the far rail of the dock.
 export const LOCKERS = [
   { role: 'mechanic', x: -3, color: '#e2574c' },

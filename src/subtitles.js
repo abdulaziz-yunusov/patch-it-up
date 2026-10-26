@@ -4,7 +4,8 @@
 // the same lines. Off in the settings, nothing is shown.
 
 import { RULES } from './state.js';
-import { BREACH_SPOTS, ROOMS } from './world.js';
+import { BREACH_SPOTS, HOOK_SPOTS, ROOMS } from './world.js';
+import { roomAt } from './game.js';
 
 const SHOW_MS = 3200;
 const ROOM_NAMES = Object.fromEntries(ROOMS.map((r) => [r.id, r.name.toLowerCase()]));
@@ -30,6 +31,13 @@ function remember(state) {
     fires: Object.fromEntries(Object.entries(state.fires).map(([room, fire]) => [room, !!fire])),
     stormWarned: state.storm.active && state.storm.warned,
     stormHits: state.storm.hits,
+    raid: state.raid.phase,
+    raidCount: state.raid.count,
+    ending: state.raid.ending,
+    hooks: { ...state.raid.hooks },
+    boarders: Object.fromEntries(Object.entries(state.raid.boarders).map(([id, b]) => [id, b.x])),
+    blocked: state.raid.blocked,
+    overboard: state.raid.overboard,
   };
 }
 
@@ -68,6 +76,26 @@ export function updateSubtitles(state, now, on, el) {
     }
     if (flying && seen.stormWarned && !was.stormWarned) say('[The alarm bell! Storm wall: brace!]', now);
     if (seen.stormHits > was.stormHits) say('[The storm wall hits!]', now);
+    // Pirates. Their sighting is the pilot's to call out, like a storm wall.
+    if (flying && seen.raid === 'alongside' && was.raid !== 'alongside') say('[Pirates alongside! Cut their grapples]', now);
+    for (const [id, hook] of Object.entries(seen.hooks)) {
+      if (flying && !was.hooks[id]) say(`[Grapple hook in the ${ROOM_NAMES[HOOK_SPOTS[hook.spot]?.room] ?? 'hull'}!]`, now);
+    }
+    for (const [id, x] of Object.entries(seen.boarders)) {
+      if (flying && was.boarders[id] === undefined) say(`[A pirate boards in the ${ROOM_NAMES[roomAt(x)]}!]`, now);
+    }
+    if (seen.raidCount === was.raidCount) {
+      if (seen.overboard > was.overboard) say('[Pirate overboard!]', now);
+      if (seen.blocked > was.blocked) say('[Cannonball! The shields hold]', now);
+    }
+    if (seen.raid === 'leaving' && was.raid !== 'leaving') {
+      const line = {
+        outrun: '[You outran the pirates!]',
+        repelled: '[The pirates give up and turn away!]',
+        looted: '[The pirates got away with your planks and fuses]',
+      }[seen.ending];
+      if (line) say(line, now);
+    }
   }
 
   queue = queue.filter((line) => line.until > now);
