@@ -1060,4 +1060,8 @@ export function newSession() {
   state.shortHanded = false;
   state.kit = { heldBy: null, planks: RULES.kitPlanks, ...KIT_HOME };
   state.props = {};
+  // The route board keeps the last route, but only one this player's own
+  // log has opened: a newcomer who flew Thunder Pass on a friend's ship
+  // starts their own room on Calm Cliffs.
+  if (!routeOpen(state.route)) state.route = 0;
 }

@@ -209,6 +209,16 @@ h2 {
   color: #ffd58a;
 }
 
+/* Kept, but a star only a landing could give: not crossed out. */
+.result-goals .waiting {
+  color: #9aa0c4;
+}
+
+.result-goals .waiting .mark,
+.result-goals .note.quiet {
+  color: #9aa0c4;
+}
+
 .result-record {
   margin: 6px 0;
   font-size: 18px;

@@ -246,7 +246,7 @@ function tick() {
   const running = audioRunning();
   mic.level = mic.meter && running ? rmsDb(mic.meter.analyser, mic.meter.data) : -120;
 
-  let open = false;
+  let open;
   if (!mic.track || settings.micMuted) open = false;
   else if (settings.voiceMode === 'ptt') open = pttHeld;
   else if (!mic.meter || !running) open = true; // nothing to measure with: just send

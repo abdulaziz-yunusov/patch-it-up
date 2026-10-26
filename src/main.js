@@ -125,7 +125,6 @@ const KIT_INTERACT = world.kit.userData.interact;
 // on the crew screen, where there is nothing to walk around).
 let sessionActive = false;
 let inWorld = false;
-let againRequested = false;
 let flownFlight = -1; // the last flight this browser was aboard for: only that one goes in its log
 let shownResult = -1; // the flight whose result screen is up
 let seenOpened = 0; // to flash when a new hole tears
@@ -149,7 +148,6 @@ const emptyInput = () => ({
   drop: false,
   bell: false,
   callout: false,
-  again: false,
   wave: false,
   flyTap: false, // a double-tap of jump: take off, or land
 });
@@ -227,7 +225,6 @@ net.onInput = (id, raw) => {
     yaw: finite(raw.yaw, previous.yaw),
     pitch: Math.max(-1.6, Math.min(1.6, finite(raw.pitch, 0))),
     use: !!raw.use,
-    again: false, // only the host sends the crew back to the dock
   };
   for (const press of PRESSES) input[press] = !!previous[press] || !!raw[press];
   inputs.set(id, input);
@@ -689,7 +686,6 @@ function queue(input) {
   pending.drop = pending.drop || input.drop;
   pending.bell = pending.bell || input.bell;
   pending.callout = pending.callout || input.callout;
-  pending.again = pending.again || input.again;
   pending.wave = pending.wave || input.wave;
   pending.flyTap = pending.flyTap || input.flyTap;
 }
@@ -767,12 +763,6 @@ function hostTick(dt, now) {
     if (input.callout) {
       input.callout = false;
       game.callOut(seated);
-    }
-    if (input.again) {
-      input.again = false;
-      // Only the host's own request counts: a joiner (or a tampered
-      // client) cannot send the whole crew back to the dock.
-      if (seated.id === local.id) returnToDock();
     }
   }
 
@@ -1251,8 +1241,19 @@ function orbitShip(t) {
 // by the pulse below while frames have stopped (a hidden, minimised or
 // covered window), so nobody is dropped for looking at another window.
 let lastStepAt = performance.now();
+
+// The simulation moves in steps of at most 50 ms: a slow frame runs
+// several of them, so a host drawing 8 frames a second still flies the
+// ship at full speed. (One step per frame, capped at 0.1 s, slowed the
+// whole crew down with the host's frame rate.) A long stall, such as a
+// tab hidden before the pulse takes over, catches up a quarter of a
+// second at most, so nobody is teleported through a wall.
+const SUBSTEP = 0.05;
+const MAX_CATCH_UP = 0.25;
+const substeps = (dt) => Math.max(1, Math.ceil(dt / SUBSTEP - 1e-9));
+
 function step(now) {
-  const dt = Math.min((now - lastStepAt) / 1000, 0.1); // a stall must not teleport anyone
+  const dt = Math.min((now - lastStepAt) / 1000, MAX_CATCH_UP);
   lastStepAt = now;
   if (!sessionActive) return dt;
   if (state.phase === 'flight') flownFlight = state.flight;
@@ -1267,8 +1268,6 @@ function step(now) {
 
   const input = player.readInput();
   if ((state.players[local.id]?.role ?? 'crew') === 'crew') input.flyTap = false; // no flying before the uniform
-  input.again = againRequested;
-  againRequested = false;
   predictWheel(dt, input.keys ?? {});
   if (local.isHost) {
     // The host plays through the same pipe as everyone else.
@@ -1279,12 +1278,12 @@ function step(now) {
         drop: own.drop || input.drop,
         bell: own.bell || input.bell,
         callout: own.callout || input.callout,
-        again: own.again || input.again,
         wave: own.wave || input.wave,
         flyTap: own.flyTap || input.flyTap,
       });
     }
-    hostTick(dt, now);
+    const n = substeps(dt);
+    for (let i = 0; i < n; i++) hostTick(dt / n, now); // a tap is used up by the first
   } else {
     joinerTick(input, dt, now, inWorld);
   }
@@ -1315,7 +1314,10 @@ function joinerTick(input, dt, now, walking) {
 
   if (walking) {
     player.body.atWheel = state.players[local.id]?.atWheel ?? false;
-    player.predict(input, dt, collidersFor(state.players[local.id]?.role ?? 'crew'), groundAt);
+    // In the same small steps as the host, so a slow frame walks as far.
+    const n = substeps(dt);
+    const colliders = collidersFor(state.players[local.id]?.role ?? 'crew');
+    for (let i = 0; i < n; i++) player.predict(input, dt / n, colliders, groundAt);
     player.record(now);
     // Flying is predicted here too; if the host disagrees for a moment
     // (a tap it never saw), follow the host.
@@ -1340,7 +1342,6 @@ function joinerTick(input, dt, now, walking) {
     sentAt.set(inputSeq, now);
     if (sentAt.size > 120) sentAt.delete(sentAt.keys().next().value);
     for (const press of PRESSES) pending[press] = false;
-    pending.again = false;
   }
 }
 
