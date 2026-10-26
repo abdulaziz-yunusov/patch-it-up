@@ -9,6 +9,16 @@ import { hatsOpen, routeOpen } from './log.js';
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const between = ([lo, hi]) => lo + Math.random() * (hi - lo);
 
+// Training (training.js): a gentle flight. Nothing happens by chance, only
+// what the lesson sets up through the helpers at the end of this file; the
+// clock stands still, the ship cannot be lost, and a hazard teaches without
+// lasting harm (a rock or a storm tears no hole, a fire does not spread).
+let gentle = false;
+export function setTraining(on) {
+  gentle = !!on;
+}
+export const inTraining = () => gentle;
+
 // The host's own clocks: when the hull next springs a leak, and when the
 // next rock comes at the bow.
 let nextBreachIn = 0;
@@ -591,10 +601,10 @@ export function startRound() {
 // storm wall needs to throw people about.
 export function tickFlight(dt, crew = {}) {
   if (state.phase !== 'flight') return;
-  state.timeLeft = Math.max(0, state.timeLeft - dt);
+  if (!gentle) state.timeLeft = Math.max(0, state.timeLeft - dt);
 
   nextBreachIn -= dt;
-  if (nextBreachIn <= 0) {
+  if (!gentle && nextBreachIn <= 0) {
     openBreach();
     nextBreachIn = between(route().breachEvery) / pace();
   }
@@ -614,7 +624,7 @@ export function tickFlight(dt, crew = {}) {
     RULES.sinkRate -
     openCount() * RULES.altitudeLossPerBreach -
     hookCount() * RULES.hookDrag;
-  state.altitude = clamp(state.altitude + state.climb * dt, 0, RULES.altitudeStart);
+  state.altitude = clamp(state.altitude + state.climb * dt, gentle ? 30 : 0, RULES.altitudeStart);
 
   // The helm answers slowly when the engines are starved, and barely at
   // all when they are dead.
@@ -623,7 +633,7 @@ export function tickFlight(dt, crew = {}) {
   state.drift = clamp(state.drift + state.raid.side * RULES.hookPull * hookCount() * dt, -1, 1);
 
   nextRockIn -= dt;
-  if (!state.rock.active && nextRockIn <= 0) {
+  if (!gentle && !state.rock.active && nextRockIn <= 0) {
     state.rock = { lane: Math.random() * 2 - 1, distance: RULES.rockDistance, active: true };
     nextRockIn = route().rockEvery / pace();
   }
@@ -637,6 +647,7 @@ export function tickFlight(dt, crew = {}) {
     }
   }
 
+  if (gentle) return; // training ends when the lessons do
   if (state.altitude <= 0) endRound('down');
   else if (state.timeLeft <= 0) endRound('landed');
 }
@@ -648,7 +659,7 @@ export function tickFlight(dt, crew = {}) {
 // Every breach in the engine or power room also costs a unit until it is
 // patched: the water gets into the works.
 function tickFurnace(dt) {
-  state.heat = Math.max(0, state.heat - RULES.heatDecay * pace() * dt);
+  state.heat = Math.max(0, state.heat - RULES.heatDecay * pace() * (gentle ? 0.25 : 1) * dt);
   state.drain = Object.entries(state.breaches).filter(
     ([id, open]) => open && (ROOM_OF[id] === 'engine' || ROOM_OF[id] === 'power')
   ).length * RULES.breachDrain;
@@ -689,7 +700,7 @@ function tickTubes(dt) {
     if (state.tubeHeat[i] >= RULES.overheatSeconds) {
       state.blown[i] = true;
       state.tubeHeat[i] = 0;
-      ignite('power'); // a fuse that blows throws sparks
+      if (!gentle) ignite('power'); // a fuse that blows throws sparks
     }
   }
 }
@@ -699,6 +710,10 @@ export const tubeName = (i) => TUBE_NAMES[i];
 // Shields at three or more turn half the hits aside. A rock that gets
 // through may also set the helm alight.
 function takeHit() {
+  if (gentle) {
+    state.log.rockHits += 1; // training: counted, so the lesson knows, but no harm done
+    return;
+  }
   const shielded = livePower(1) >= RULES.shieldThreshold && Math.random() < 0.5;
   if (shielded) return;
   state.log.rockHits += 1;
@@ -714,13 +729,13 @@ function tickFires(dt) {
     if (!fire) continue;
     fire.burn += dt;
     fire.spread += dt;
-    if (fire.spread >= fireSpreadSeconds()) {
+    if (!gentle && fire.spread >= fireSpreadSeconds()) {
       fire.spread = 0;
       const next = NEXT_ROOMS[room].filter((r) => !state.fires[r]);
       if (next.length && ignite(next[Math.floor(Math.random() * next.length)])) state.log.spread += 1;
     }
   }
-  if (ROOMS.every((room) => state.fires[room])) endRound('burned');
+  if (!gentle && ROOMS.every((room) => state.fires[room])) endRound('burned');
 }
 
 // Storm walls: one comes every so often, and only the pilot can see it.
@@ -735,7 +750,7 @@ function tickStorm(dt, crew) {
   }
   if (!storm.active) {
     nextStormIn -= dt;
-    if (nextStormIn <= 0) {
+    if (!gentle && nextStormIn <= 0) {
       storm.active = true;
       storm.left = RULES.stormWarnSeconds;
       storm.warned = false;
@@ -751,8 +766,10 @@ function tickStorm(dt, crew) {
   storm.hits += 1;
   nextStormIn = between(route().stormEvery) / pace();
   const shields = livePower(1);
-  for (let i = 0; i < Math.max(0, RULES.stormSafeShields - shields); i++) openBreach();
-  if (shields < 2 && Math.random() < 0.5) ignite(ROOMS[Math.floor(Math.random() * ROOMS.length)]);
+  if (!gentle) {
+    for (let i = 0; i < Math.max(0, RULES.stormSafeShields - shields); i++) openBreach();
+    if (shields < 2 && Math.random() < 0.5) ignite(ROOMS[Math.floor(Math.random() * ROOMS.length)]);
+  }
   state.altitude = Math.max(0, state.altitude - RULES.stormAltitudeLoss);
   for (const player of Object.values(state.players)) {
     if (player.braced) continue;
@@ -775,7 +792,7 @@ function tickRaid(dt) {
   raid.t += dt;
   if (raid.phase === 'none') {
     // Never so late that the raid would outlast the flight.
-    if (raidsLeft <= 0 || state.timeLeft < RULES.raidApproach + 25) return;
+    if (gentle || raidsLeft <= 0 || state.timeLeft < RULES.raidApproach + 25) return;
     nextRaidIn -= dt;
     if (nextRaidIn > 0) return;
     raidsLeft -= 1;
@@ -815,7 +832,7 @@ function tickAlongside(dt) {
   // A broadside every few seconds: the shields stop it, or it holes the
   // hull on the side facing them.
   raidShotIn -= dt;
-  if (raidShotIn <= 0) {
+  if (!gentle && raidShotIn <= 0) {
     raidShotIn = RULES.raidCannonEvery / pace();
     raid.shots += 1;
     if (livePower(1) >= RULES.raidShieldBlock) raid.blocked += 1;
@@ -828,7 +845,7 @@ function tickAlongside(dt) {
   // The grapples bite one after another, one per room at most.
   const hooks = Math.max(1, Math.round((route().hooks ?? 2) * pace()));
   raidHookIn -= dt;
-  if (raid.thrown < hooks && raidHookIn <= 0) {
+  if (!gentle && raid.thrown < hooks && raidHookIn <= 0) {
     raidHookIn = RULES.raidHookEvery;
     const taken = new Set(Object.values(raid.hooks).map((h) => h.spot));
     const free = HOOK_SPOTS.map((_, i) => i).filter((i) => !taken.has(i));
@@ -842,17 +859,19 @@ function tickAlongside(dt) {
   // A grapple left long enough sends a pirate down it.
   for (const hook of Object.values(raid.hooks)) {
     hook.held += dt;
-    if (hook.held >= RULES.boardAfter / pace() && Object.keys(raid.boarders).length < RULES.maxBoarders) {
+    if (!gentle && hook.held >= RULES.boardAfter / pace() && Object.keys(raid.boarders).length < RULES.maxBoarders) {
       hook.held = 0;
       sendBoarder(hook.spot);
     }
   }
   tickBoarders(dt);
 
-  if (raid.thrown >= hooks && !Object.keys(raid.hooks).length && !Object.keys(raid.boarders).length) {
+  // In training only the grapples the lesson threw count.
+  const allThrown = gentle ? raid.thrown > 0 : raid.thrown >= hooks;
+  if (allThrown && !Object.keys(raid.hooks).length && !Object.keys(raid.boarders).length) {
     raid.repelled += 1;
     endRaid('repelled');
-  } else if (raid.t >= RULES.raidMaxSeconds) {
+  } else if (!gentle && raid.t >= RULES.raidMaxSeconds) {
     // Still hooked on: they help themselves and cast off.
     state.kit.planks = 0;
     state.fuses = Math.max(0, state.fuses - RULES.lootFuses);
@@ -1064,4 +1083,54 @@ export function newSession() {
   // log has opened: a newcomer who flew Thunder Pass on a friend's ship
   // starts their own room on Calm Cliffs.
   if (!routeOpen(state.route)) state.route = 0;
+}
+
+// --- training's own events (training.js sets each lesson up with these) ----
+
+export function tearHole(id) {
+  if (state.breaches[id] || !ROOM_OF[id]) return false;
+  state.breaches[id] = true;
+  state.opened += 1;
+  return true;
+}
+
+// A rock at the bow, lane -1 (port) .. 1 (starboard).
+export function throwRock(lane) {
+  state.rock = { lane: clamp(lane, -1, 1), distance: RULES.rockDistance, active: true };
+}
+
+// A storm wall seconds away (the pilot sees it coming).
+export function startStorm(seconds = RULES.stormWarnSeconds) {
+  Object.assign(state.storm, { active: true, left: seconds, warned: false });
+}
+
+// Pirates already alongside, holding off until the lesson throws a
+// grapple or sends a boarder.
+export function startRaid(side = 1) {
+  Object.assign(state.raid, {
+    phase: 'alongside',
+    side,
+    t: 0,
+    outrun: 0,
+    hooks: {},
+    thrown: 0,
+    boarders: {},
+    ending: '',
+    count: state.raid.count + 1,
+  });
+  state.log.raids += 1;
+}
+
+// A grapple through the wall of a room (spot: index into HOOK_SPOTS).
+export function throwHook(spot) {
+  const raid = state.raid;
+  if (raid.phase !== 'alongside') return;
+  raid.thrown += 1;
+  raid.serial += 1;
+  raid.hooks[`h${raid.serial}`] = { spot, held: 0 };
+}
+
+// A pirate down the line into a room (spot: index into HOOK_SPOTS).
+export function boardNow(spot) {
+  if (state.raid.phase === 'alongside') sendBoarder(spot);
 }
