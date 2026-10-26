@@ -2545,3 +2545,83 @@ legend.set-label {
   justify-content: center;
   flex-wrap: wrap;
 }
+
+/* The job list, left of the screen in flight: what needs doing now. */
+#jobList {
+  position: absolute;
+  left: 16px;
+  top: calc(84px * var(--hud-scale, 1));
+  width: min(calc(290px * var(--hud-scale, 1)), calc(100vw - 32px));
+  padding: 10px 14px 12px;
+  background: rgba(27, 32, 57, 0.86);
+  border-radius: 14px;
+  font-size: calc(14px * var(--hud-scale, 1));
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.job-title {
+  margin-bottom: 6px;
+  font-size: calc(12px * var(--hud-scale, 1));
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #ffd58a;
+}
+
+#jobItems {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+#jobItems li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #eef0fb;
+  transition: opacity 900ms ease-in 300ms;
+}
+
+.job-box {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin-top: 2px;
+  border: 2px solid #c9cff0;
+  border-radius: 3px;
+  font-size: 12px;
+  line-height: 12px;
+  text-align: center;
+}
+
+#jobItems li.urgent {
+  color: #ffb3ab;
+}
+
+#jobItems li.urgent .job-box {
+  border-color: #ff8f7a;
+}
+
+#jobItems li.done {
+  color: #9fe3b8;
+  text-decoration: line-through;
+  opacity: 0;
+}
+
+#jobItems li.done .job-box {
+  border-color: #9fe3b8;
+  color: #9fe3b8;
+}
+
+.job-empty,
+.job-more {
+  font-size: calc(13px * var(--hud-scale, 1));
+  color: #9aa0c4;
+}
+
+.job-more {
+  margin-top: 6px;
+}

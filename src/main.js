@@ -45,6 +45,7 @@ import { resetSubtitles, updateSubtitles } from './subtitles.js';
 import { endVoice, handleSignal, hostLink, hostUnlink, initVoice, micState, startMic, stopMic, voiceStatus } from './voice.js';
 import { hasVoice, isSpeaking, outputRoute, placeVoices } from './audio.js';
 import { initVoiceUi, updateVoiceUi } from './voiceUi.js';
+import { clearJobList, coveredRoles, jobsFor, updateJobList } from './jobs.js';
 import { TRAINING_START, skipLesson, startTraining, stopTraining, trainingActive, trainingFinished, updateTraining } from './training.js';
 
 // Graphics quality is the resolution the scene is drawn at: below the
@@ -383,6 +384,15 @@ function beginTraining() {
   showTrainingButtons();
 }
 
+// The job list: in flight, for the jobs this player covers. Training has
+// its own card in that spot, so the list waits until a real flight.
+function updateJobs(now) {
+  const me = state.players[local.id];
+  const show = state.phase === 'flight' && !trainingActive() && !!me;
+  const key = (action) => keyLabel(settings.keys[action]);
+  updateJobList(show ? jobsFor(state, me, key) : [], { show, roles: coveredRoles(state, me), now });
+}
+
 // The pause menu's buttons say what they do in training.
 function showTrainingButtons() {
   const training = trainingActive();
@@ -679,6 +689,7 @@ function leaveShip(message = '', { keepSeat = false } = {}) {
   raidAlert.hidden = true;
   resetGathering();
   resetSubtitles();
+  clearJobList();
   seenCallout = null;
   calloutBox.hidden = true;
   seenStormHits = null;
@@ -1496,6 +1507,7 @@ function loop() {
     updateTakeoff();
     updateSubtitles(state, now, settings.subtitles, subtitleLine);
     if (trainingActive()) updateTraining(now);
+    updateJobs(now);
     updateCallout(now);
     updateStormAlert(now);
     updateRaidAlert();

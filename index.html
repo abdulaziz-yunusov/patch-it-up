@@ -328,6 +328,13 @@
         </div>
       </div>
       <div id="flash"></div>
+      <!-- The job list: what needs doing now, for the jobs you cover. -->
+      <div id="jobList" aria-live="polite" hidden>
+        <div id="jobTitle" class="job-title"></div>
+        <ul id="jobItems"></ul>
+        <div id="jobEmpty" class="job-empty">All clear: keep an eye out</div>
+        <div id="jobMore" class="job-more" hidden></div>
+      </div>
       <!-- What the whole crew needs to see: the tubes, the power budget,
            and the mechanic's supplies. -->
       <div id="shipPanel" aria-label="Ship systems">
