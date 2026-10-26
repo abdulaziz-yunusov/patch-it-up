@@ -43,14 +43,24 @@ export function evaluateFlight(state) {
   const landed = state.result === 'landed';
   const altitude = Math.max(0, Math.round(state.altitude));
   const challenge = CHALLENGES[route.challenge] ?? CHALLENGES.noSpread;
+  // A ship that does not make port earns no second or third star. A goal
+  // that was only short of the landing (the challenge kept, say) is shown
+  // as waiting on it, not crossed out, so the crew can see it went right.
+  const kept = challenge.done(log);
   const goals = [
     { text: 'Land the ship', done: landed, note: '' },
     {
       text: `Land with ${RULES.landingGoal}% altitude or more`,
       done: landed && altitude >= RULES.landingGoal,
       note: landed ? `landed at ${altitude}%` : '',
+      needsLanding: !landed,
     },
-    { text: challenge.text, done: landed && challenge.done(log), note: challenge.note(log) },
+    {
+      text: challenge.text,
+      done: landed && kept,
+      note: challenge.note(log),
+      needsLanding: !landed && kept,
+    },
   ];
   return { route: route.name, landed, altitude, goals, stars: goals.filter((g) => g.done).length };
 }

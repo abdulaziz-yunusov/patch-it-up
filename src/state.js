@@ -2,8 +2,6 @@
 // The host owns it, changes it, and sends it to everyone; every browser
 // draws the 3D scene from the copy it last received.
 
-import { PLAYER } from './player.js';
-
 export const RULES = {
   // The round, as the plan's table sets it out.
   roundSeconds: 180,

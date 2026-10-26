@@ -53,9 +53,11 @@ export function showResult(state, { flew, colorOf }) {
 
   $('resultGoals').replaceChildren(
     ...evaluation.goals.map((goal) => {
-      const item = el('li', goal.done ? 'done' : 'missed');
-      item.append(el('span', 'mark', goal.done ? '✓' : '✗'), el('span', 'goal', goal.text));
+      const waiting = !goal.done && goal.needsLanding;
+      const item = el('li', goal.done ? 'done' : waiting ? 'waiting' : 'missed');
+      item.append(el('span', 'mark', goal.done ? '✓' : waiting ? '–' : '✗'), el('span', 'goal', goal.text));
       if (goal.note) item.append(el('span', 'note', goal.note));
+      else if (waiting) item.append(el('span', 'note quiet', 'needs a landing'));
       return item;
     })
   );

@@ -38,7 +38,7 @@ const LOWER = new Set(['root', 'hips', 'thighL', 'shinL', 'footL', 'thighR', 'sh
 // so the feet stay put on the ground at any speed.
 const STRIDE = { walk: 1.14, run: 1.76 };
 
-const LOOPED = ['Idle', 'Walk', 'Run', 'Jump', 'Fall', 'Steer', 'Carry', 'Hammer'];
+// Every other clip (Idle, Walk, Run, Jump, Fall, Steer, Carry, Hammer) loops.
 const ONCE = ['Land', 'TurnStep', 'Reach', 'Wave'];
 
 let template = null;
