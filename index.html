@@ -8,8 +8,8 @@
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><ellipse cx='16' cy='13' rx='11' ry='8' fill='%23c86a33'/><rect x='8' y='21' width='16' height='6' rx='1' fill='%238a5a36'/></svg>"
     />
-    <script type="module" crossorigin src="/patch-it-up/assets/index-BClWi5Zj.js"></script>
-    <link rel="stylesheet" crossorigin href="/patch-it-up/assets/index-CtYEcDmT.css">
+    <script type="module" crossorigin src="/patch-it-up/assets/index-XUMPrGpK.js"></script>
+    <link rel="stylesheet" crossorigin href="/patch-it-up/assets/index-N5hw6b9b.css">
   </head>
   <body>
     <!-- One 3D canvas lives behind these screens; only one screen shows at a time. -->
@@ -80,6 +80,7 @@
           <button id="training" type="button" class="menu-btn">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z" /></svg>
             Training
+            <span id="trainingTag" class="soon-chip done-chip" hidden>✓ Done</span>
           </button>
           <button id="settings" type="button" class="menu-btn">
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></svg>
@@ -265,8 +266,24 @@
         <div id="raidAlert" role="alert" hidden><strong id="raidTitle"></strong><span id="raidLine"></span></div>
         <div id="callout" role="status" hidden><span id="calloutWho"></span><strong id="calloutText"></strong></div>
       </div>
+      <!-- Training: the lesson in hand, and how far through you are. -->
+      <div id="trainingCard" role="status" aria-live="polite" hidden>
+        <div class="tc-head"><span id="trainingChapter"></span><span id="trainingCheck" hidden>✓ Done</span></div>
+        <div id="trainingTitle"></div>
+        <p id="trainingText"></p>
+        <div class="tc-track"><div id="trainingBar"></div></div>
+      </div>
+      <div id="trainingDone" role="dialog" aria-labelledby="trainingDoneTitle" hidden>
+        <h2 id="trainingDoneTitle"></h2>
+        <p id="trainingDoneText"></p>
+        <div class="td-buttons">
+          <button id="trainingHost" type="button" class="primary">Host a game</button>
+          <button id="trainingMenu" type="button">Back to menu</button>
+        </div>
+      </div>
       <div id="lockOverlay">
         <button id="clickToPlay" type="button" class="primary big">Click to play</button>
+        <button id="skipLesson" type="button" hidden>Skip this step</button>
         <button id="openSettings" type="button">Settings</button>
         <button id="leaveShip" type="button">Leave ship</button>
       </div>
@@ -300,6 +317,16 @@
         <div id="altitudeText">100%</div>
         <div id="furnaceBar"><div id="furnaceFill"></div></div>
         <div id="furnaceText">Furnace</div>
+        <!-- The pilot's helm gauge, while they hold the wheel: where the ship
+             sits between the edges, and where the next rock would hit. -->
+        <div id="helmGauge" aria-label="Helm position" hidden>
+          <span class="helm-end">Port</span>
+          <div class="helm-track">
+            <div id="helmRock" hidden></div>
+            <div id="helmShip"></div>
+          </div>
+          <span class="helm-end">Starboard</span>
+        </div>
       </div>
       <div id="flash"></div>
       <!-- What the whole crew needs to see: the tubes, the power budget,
