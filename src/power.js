@@ -74,6 +74,13 @@ export async function loadPowerModel(world) {
   model.traverse((obj) => {
     if (obj.isMesh && /^(fuse_box|fuse_switch_)/.test(obj.name)) obj.userData.interact = FUSE_BOX;
   });
+  // The model's blank name plaques sit behind the tube caps; the coded signs
+  // above the tubes (world.js) carry the names instead.
+  for (let i = 0; i < 3; i++) {
+    const plaque = model.getObjectByName(`plaque_${i}`);
+    if (plaque) plaque.visible = false;
+  }
+
   const fuseLamps = [0, 1, 2, 3].map((i) => model.getObjectByName(`lamp_fuse_${i}`)).filter(Boolean);
   for (const lamp of fuseLamps) lamp.material.emissive.set('#5cd68a');
 
