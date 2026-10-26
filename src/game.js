@@ -89,6 +89,12 @@ export function canUse(interact, player) {
       if (player.fuse) return 'You already carry a fuse';
       if (handsFull(player)) return 'Hands full: drop what you carry';
       return state.fuses <= 0 ? 'No spare fuses left' : null;
+    case 'steam':
+      if (state.phase === 'flight' && state.ventReadyIn > 0) return `Valve building pressure: ${Math.ceil(state.ventReadyIn)} s`;
+      return null;
+    case 'powerDown':
+      if (state.blown[interact.index]) return `${TUBE_NAMES[interact.index]} fuse blown: tube locked`;
+      return state.power[interact.index] <= 0 ? `${TUBE_NAMES[interact.index]} tube is empty` : null;
     case 'power':
       if (state.blown[interact.index]) return `${TUBE_NAMES[interact.index]} fuse blown: tube locked`;
       return state.power[interact.index] >= RULES.maxPerTube ? `${TUBE_NAMES[interact.index]} tube is full` : null;
@@ -115,6 +121,7 @@ export const ACTIONS = {
   takeBucket: (interact, player) => takeBucket(player),
   douse: (interact, player) => douseFire(interact.room, player),
   power: (interact, player) => movePower(interact.index, player),
+  powerDown: (interact, player) => powerDown(interact.index, player),
   wheel: (interact, player, body) => toggleWheel(player, body),
   pickup: (interact, player) => pickUpKit(player),
   role: (interact, player) => pickRole(player, interact.takes),
@@ -157,6 +164,7 @@ export function ventSteam(player) {
   state.steam += 1;
   if (state.phase === 'flight') {
     state.tubeHeat = [0, 0, 0];
+    state.ventReadyIn = RULES.ventCooldown; // the valve builds pressure again before the next vent
     credit(player, 'power');
   }
   return true;
@@ -418,6 +426,16 @@ export function movePower(index, player) {
   return true;
 }
 
+// The handle under each lever: a unit out of that tube and back into the
+// spares, for the engineer to place where it is needed.
+export function powerDown(index, player) {
+  if (state.blown[index] || state.power[index] <= 0) return false;
+  state.power[index] -= 1;
+  state.spare += 1;
+  credit(player, 'power');
+  return true;
+}
+
 // One pair of hands on the wheel at a time.
 export function toggleWheel(player, body) {
   if (player.atWheel) {
@@ -433,10 +451,39 @@ export function toggleWheel(player, body) {
   return true;
 }
 
-// While you hold the wheel, A and D steer instead of walking.
+// While you hold the wheel, A and D steer instead of walking. Let go and
+// the wheel eases back to centre; steering against the lock turns it
+// faster, so a pilot can swing from one side to the other. Pure, so a
+// joining pilot's browser can turn its own wheel the same way (main.js).
+export function nextSteering(steering, keys, dt) {
+  const turn = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
+  if (!turn) {
+    const back = Math.max(0, Math.abs(steering) - RULES.steerReturn * dt);
+    return Math.sign(steering) * back;
+  }
+  const against = steering !== 0 && Math.sign(steering) !== turn;
+  const rate = RULES.steerRate * (against ? RULES.steerCounter : 1);
+  return clamp(steering + turn * rate * dt, -1, 1);
+}
+
 export function steerShip(dt, keys) {
-  if (keys.KeyA) state.steering = clamp(state.steering - RULES.steerRate * dt, -1, 1);
-  if (keys.KeyD) state.steering = clamp(state.steering + RULES.steerRate * dt, -1, 1);
+  state.steering = nextSteering(state.steering, keys, dt);
+}
+
+// How well the helm answers: slowly with starved engines, barely when dead.
+export const helmAnswer = () => {
+  const engines = livePower(0);
+  return engines === 0 ? 0.25 : engines <= RULES.enginesLow ? 0.5 : 1;
+};
+
+// How fast the ship is sliding sideways right now, in drift units a
+// second, from the wheel and any grapples; 0 once she is pressed against
+// the edge she is heading for. Every browser draws the slide from this.
+export function sideSpeed() {
+  if (state.phase !== 'flight') return 0;
+  const v = state.steering * RULES.driftRate * helmAnswer() + state.raid.side * RULES.hookPull * hookCount();
+  if ((v > 0 && state.drift >= 1) || (v < 0 && state.drift <= -1)) return 0;
+  return v;
 }
 
 export function pickUpKit(player) {
@@ -445,8 +492,20 @@ export function pickUpKit(player) {
   return true;
 }
 
-// The drop key: a carried fuse goes back in its crate, the kit goes on
-// the floor in front of you.
+// Where a dropped kit may lie: inside the hull, in the room you stand in,
+// a little clear of every wall (the bulkheads stand at x = -4 and 4).
+const ROOM_X = { engine: [-SHIP.length / 2, -4], power: [-4, 4], helm: [4, SHIP.length / 2] };
+const KIT_CLEAR = SHIP.thickness / 2 + 0.3;
+function kitSpot(x, z) {
+  const [lo, hi] = ROOM_X[roomAt(x)];
+  return {
+    x: clamp(x, lo + KIT_CLEAR, hi - KIT_CLEAR),
+    z: clamp(z, -SHIP.width / 2 + KIT_CLEAR, SHIP.width / 2 - KIT_CLEAR),
+  };
+}
+
+// The drop key: a bucket is spilt, a carried fuse goes back in its crate,
+// the kit goes down just in front of you, on your side of any wall.
 export function dropKit(player, body, yaw) {
   if (player.bucket) {
     player.bucket = false; // the water goes on the floor
@@ -459,10 +518,11 @@ export function dropKit(player, body, yaw) {
   }
   if (state.kit.heldBy !== player.id) return false;
   const ahead = lookDirection(yaw, 0);
+  const spot = kitSpot(body.position.x + ahead.x * 0.5, body.position.z + ahead.z * 0.5);
   state.kit.heldBy = null;
-  state.kit.x = body.position.x + ahead.x * 0.8;
+  state.kit.x = spot.x;
   state.kit.y = KIT_HOME.y;
-  state.kit.z = body.position.z + ahead.z * 0.8;
+  state.kit.z = spot.z;
   return true;
 }
 
@@ -497,6 +557,7 @@ export function startRound() {
   state.rock = { lane: 0, distance: 0, active: false };
   state.result = null;
   state.tubeHeat = [0, 0, 0];
+  state.ventReadyIn = 0;
   state.blown = [false, false, false];
   state.fuses = RULES.spareFuses;
   state.drain = 0;
@@ -553,9 +614,7 @@ export function tickFlight(dt, crew = {}) {
 
   // The helm answers slowly when the engines are starved, and barely at
   // all when they are dead.
-  const engines = livePower(0);
-  const answer = engines === 0 ? 0.25 : engines <= RULES.enginesLow ? 0.5 : 1;
-  state.drift = clamp(state.drift + state.steering * RULES.driftRate * answer * dt, -1, 1);
+  state.drift = clamp(state.drift + state.steering * RULES.driftRate * helmAnswer() * dt, -1, 1);
   // Grapples haul her over toward the pirate ship.
   state.drift = clamp(state.drift + state.raid.side * RULES.hookPull * hookCount() * dt, -1, 1);
 
@@ -565,7 +624,7 @@ export function tickFlight(dt, crew = {}) {
     nextRockIn = route().rockEvery / pace();
   }
   if (state.rock.active) {
-    state.rock.distance -= RULES.rockSpeed * dt;
+    state.rock.distance -= (route().rockSpeed ?? RULES.rockSpeed) * dt;
     if (state.rock.distance <= 0) {
       const dodged = Math.abs(state.rock.lane - state.drift) > RULES.rockHitWidth;
       state.rock.active = false;
@@ -593,7 +652,12 @@ function tickFurnace(dt) {
   let total = state.spare + state.power.reduce((a, b) => a + b, 0);
   while (total > budget) {
     if (state.spare > 0) state.spare -= 1;
-    else state.power[fullestTube()] -= 1;
+    else {
+      // Out of a tube the engineer set: every browser flashes it.
+      const tube = fullestTube();
+      state.power[tube] -= 1;
+      state.lostUnit = { count: state.lostUnit.count + 1, tube };
+    }
     total -= 1;
   }
   state.spare += budget - total;
@@ -613,6 +677,7 @@ function fullestTube() {
 // blows, taking that tube offline until a new fuse goes in. Below full it
 // cools off, and the vent valve cools everything at once.
 function tickTubes(dt) {
+  state.ventReadyIn = Math.max(0, state.ventReadyIn - dt);
   for (let i = 0; i < 3; i++) {
     if (state.blown[i]) continue;
     if (state.power[i] >= RULES.maxPerTube) state.tubeHeat[i] += dt;

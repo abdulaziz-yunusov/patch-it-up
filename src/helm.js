@@ -64,7 +64,9 @@ let zooming = false;
 
 const lerp = (a, b, t) => a + (b - a) * t;
 
-export function updateHelm(world, state, { camera, view, player, now, dt }) {
+// steering: the wheel as this browser draws it (a joining pilot's own
+// guess, see main.js), so the needle moves with the wheel.
+export function updateHelm(world, state, { camera, view, player, now, dt, steering = state.steering }) {
   const helm = world.helm;
   if (!helm) return;
 
@@ -76,7 +78,7 @@ export function updateHelm(world, state, { camera, view, player, now, dt }) {
     const shake = state.phase !== 'lobby' ? Math.sin(now / 60) * 0.04 : 0;
     speed.rotation.x = lerp(-2.2, 2.2, engines) + shake;
   }
-  if (heading) heading.rotation.y = -state.steering * 0.9 + Math.sin(now / 900) * 0.05;
+  if (heading) heading.rotation.y = -steering * 0.9 + Math.sin(now / 900) * 0.05;
   helm.indicators.forEach((lamp, i) => {
     if (!lamp) return;
     const units = livePower(i);

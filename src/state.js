@@ -34,6 +34,7 @@ export const RULES = {
   overheatWarn: 10, // from here the tube glows and the crew is warned
   coolRate: 0.25,
   ventSeconds: 3, // hold the vent valve this long
+  ventCooldown: 20, // seconds before the valve can vent again (a tube blows after 15 s at full)
   fuseSeconds: 2, // hold at the fuse box this long to fit a new fuse
   spareFuses: 3, // in the engine room's crate, per round
   breachDrain: 1, // power units lost per breach in the engine or power room
@@ -83,7 +84,11 @@ export const RULES = {
 
   maxPerTube: 4,
   patchSeconds: 2.5,
-  steerRate: 0.9,
+  // The wheel: A and D turn it, letting go eases it back to centre, and
+  // steering against the lock swings it faster.
+  steerRate: 1.4, // full lock in 0.7 s
+  steerReturn: 2, // back to centre from full lock in 0.5 s
+  steerCounter: 2, // twice as fast when steering against the lock
   reach: 2.5, // metres you can interact from
   maxPlayers: 3,
   // Fewer than three can fly too: the host rings the dock bell to cast off
@@ -108,13 +113,14 @@ export const RULES = {
 // The route board at the dock. The host picks; the flight's pace follows.
 // raids: pirate raids a flight at most; hooks: grapples each raid throws;
 // raidEvery: seconds after one raid ends before the next can be sighted.
+// rockSpeed: metres per second a rock closes in (RULES.rockSpeed if left out).
 // challenge: the route's third star (log.js); open: what unlocks it in the
 // host's log (null: always open).
 export const ROUTES = [
-  { name: 'Calm Cliffs', breachEvery: [10, 18], rockEvery: 12, stormEvery: [55, 80], raids: 1, hooks: 2, raidEvery: [60, 80], challenge: 'noSpread', open: null },
-  { name: 'Thunder Pass', breachEvery: [6, 11], rockEvery: 8, stormEvery: [35, 55], raids: 2, hooks: 3, raidEvery: [30, 45], challenge: 'allBraced', open: { landedOn: 0 } },
+  { name: 'Calm Cliffs', breachEvery: [10, 18], rockEvery: 12, rockSpeed: 6, stormEvery: [55, 80], raids: 1, hooks: 2, raidEvery: [60, 80], challenge: 'noSpread', open: null },
+  { name: 'Thunder Pass', breachEvery: [6, 11], rockEvery: 8, rockSpeed: 8, stormEvery: [35, 55], raids: 2, hooks: 3, raidEvery: [30, 45], challenge: 'allBraced', open: { landedOn: 0 } },
   // Pirate waters: fewer storms, raid after raid.
-  { name: 'Skull Straits', breachEvery: [9, 15], rockEvery: 11, stormEvery: [75, 100], raids: 3, hooks: 3, raidEvery: [12, 20], challenge: 'noLoot', open: { stars: 4 } },
+  { name: 'Skull Straits', breachEvery: [9, 15], rockEvery: 11, rockSpeed: 7, stormEvery: [75, 100], raids: 3, hooks: 3, raidEvery: [12, 20], challenge: 'noLoot', open: { stars: 4 } },
 ];
 
 // What the dock mirror can put on your head. Index 0 is bare. HAT_STARS:
@@ -164,6 +170,8 @@ export const state = {
   power: [2, 2, 2], // units in the engine, shield and lift tubes
   spare: 0, // units the furnace has made that no tube holds yet
   tubeHeat: [0, 0, 0], // seconds each tube has run at full power
+  ventReadyIn: 0, // seconds until the vent valve can be used again
+  lostUnit: { count: 0, tube: -1 }, // the furnace cooled and a tube lost a unit: clients flash it
   blown: [false, false, false], // a blown fuse: that tube is offline, its units stuck
   fuses: RULES.spareFuses, // spare fuses left in the engine room crate
   drain: 0, // power units the breaches in the engine and power rooms cost now
@@ -264,6 +272,8 @@ export function snapshot() {
     power: state.power,
     spare: state.spare,
     tubeHeat: state.tubeHeat,
+    ventReadyIn: state.ventReadyIn,
+    lostUnit: state.lostUnit,
     blown: state.blown,
     fuses: state.fuses,
     drain: state.drain,
@@ -307,6 +317,8 @@ export function applySnapshot(s) {
   state.power = s.power ?? state.power;
   state.spare = s.spare ?? state.spare;
   state.tubeHeat = s.tubeHeat ?? state.tubeHeat;
+  state.ventReadyIn = s.ventReadyIn ?? 0;
+  state.lostUnit = s.lostUnit ?? state.lostUnit;
   state.blown = s.blown ?? state.blown;
   state.fuses = s.fuses ?? state.fuses;
   state.drain = s.drain ?? 0;

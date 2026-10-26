@@ -26,6 +26,7 @@ function remember(state) {
     coldFurnace: state.heat <= 0.25,
     hot: state.tubeHeat.map((t) => t >= RULES.overheatWarn),
     blown: [...state.blown],
+    lostUnit: state.lostUnit?.count ?? 0,
     planks: state.kit.planks,
     callout: state.callout.count,
     fires: Object.fromEntries(Object.entries(state.fires).map(([room, fire]) => [room, !!fire])),
@@ -67,6 +68,9 @@ export function updateSubtitles(state, now, on, el) {
       if (seen.blown[i] && !was.blown[i]) say(`[${name} fuse blown! Spare fuses: crate in the engine room]`, now);
       if (flying && !seen.blown[i] && was.blown[i]) say(`[${name} back online]`, now);
     });
+    if (flying && seen.lostUnit > was.lostUnit && TUBES[state.lostUnit.tube]) {
+      say(`[Furnace cooling: ${TUBES[state.lostUnit.tube].toLowerCase()} lost a unit]`, now);
+    }
     if (flying && seen.planks === 0 && was.planks > 0) say('[Patch kit empty: restock at the supply rack]', now);
     if (seen.callout !== was.callout && state.callout.text) say(`[${state.callout.name}: ${state.callout.text}]`, now);
     for (const [room, burning] of Object.entries(seen.fires)) {

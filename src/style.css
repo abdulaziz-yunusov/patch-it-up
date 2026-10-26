@@ -492,6 +492,55 @@ button.big {
   background: #e2574c;
 }
 
+/* The pilot's helm gauge: the ship's place between the edges, and the
+   red band where the next rock hits. Keep the marker out of the band. */
+#helmGauge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-weight: 700;
+  font-size: calc(12px * var(--hud-scale, 1));
+  text-transform: uppercase;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+}
+
+.helm-track {
+  position: relative;
+  flex: 1;
+  height: 14px;
+  background: rgba(20, 24, 48, 0.75);
+  border: 3px solid #3b2516;
+  border-radius: 10px;
+}
+
+#helmRock {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  border-radius: 7px;
+  background: rgba(226, 87, 76, 0.75);
+}
+
+#helmShip {
+  position: absolute;
+  top: -6px;
+  width: 10px;
+  height: 20px;
+  margin-left: -5px;
+  border-radius: 4px;
+  background: #f2a53a;
+  box-shadow: 0 0 0 2px #3b2516;
+}
+
+#helmGauge[hidden] {
+  display: none;
+}
+
+#helmShip.at-edge {
+  background: #e2574c;
+}
+
 #altitudeText {
   margin-top: 4px;
   font-weight: 700;

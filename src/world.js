@@ -29,6 +29,10 @@ export const GANGPLANK = { halfWidth: 1, zFoot: -5, zTop: -3 };
 // Where the pilot stands when they take the wheel: one stride behind it.
 export const HELM_STANCE = { x: 8.9, z: 0, look: -Math.PI / 2 };
 
+// One unit of drift (state.drift, -1 .. 1) is this many metres sideways:
+// the rock, the rain and the helm gauge all slide on this one scale.
+export const DRIFT_METRES = 3.2;
+
 const TUBE_COOL = new THREE.Color('#6b7183');
 const TUBE_HOT = new THREE.Color('#ff5a2e');
 
@@ -131,6 +135,9 @@ export function buildShip() {
   // A solid part: added to the ship and remembered as a collider.
   const solid = (geometry, material, x, y, z) => {
     const mesh = part(geometry, material, x, y, z);
+    // The wooden solids are the walls: the interact ray stops at them, so
+    // nothing in the next room can be used through a bulkhead (interact.js).
+    mesh.userData.blocksInteract = material === wood;
     mesh.updateMatrixWorld(true);
     colliders.push(new THREE.Box3().setFromObject(mesh));
     return mesh;
@@ -303,7 +310,8 @@ function buildFires(ship, box) {
     const target = new THREE.Mesh(box(1.1, 1.8, 1.1), new THREE.MeshBasicMaterial());
     target.position.y = 0.9;
     target.visible = false; // never drawn, still hit by rays
-    target.userData.fireInteract = { label: 'Douse the fire', action: 'douse', role: 'mechanic', room };
+    // Anyone with a bucket can fight a fire: it is the whole crew's emergency.
+    target.userData.fireInteract = { label: 'Douse the fire', action: 'douse', room };
     group.add(target);
     ship.add(group);
     fires[room] = { group, flames, light, target };
@@ -388,7 +396,7 @@ export function applyRolePalette(world, palette, isDefault) {
 }
 
 // Draw the ship and the dock the way the state says they are.
-export function applyState(world, state, localAtWheel = false) {
+export function applyState(world, state, localAtWheel = false, shownSteering = null) {
   world.tubes.forEach((tube, i) => {
     const height = TUBE.min + (state.power[i] / RULES.maxPerTube) * (TUBE.max - TUBE.min);
     tube.scale.y = height;
@@ -423,11 +431,14 @@ export function applyState(world, state, localAtWheel = false) {
     world.rock.position.set(
       SHIP.length / 2 + state.rock.distance,
       2.5,
-      (state.rock.lane - state.drift) * 3.2
+      (state.rock.lane - state.drift) * DRIFT_METRES
     );
     world.rock.rotation.set(state.rock.distance * 0.08, state.rock.distance * 0.05, 0);
   }
-  world.wheelDisc.rotation.y = state.steering * 2.2;
+  // Positive steering (to starboard) turns the top of the wheel to the
+  // pilot's right: the mount tips the disc's axis to point at the pilot.
+  // shownSteering: a joining pilot's own guess at the wheel (main.js).
+  world.wheelDisc.rotation.y = -(shownSteering ?? state.steering) * 2.2;
   world.wheelMount.userData.interact.label = localAtWheel ? 'Leave the wheel' : 'Take the wheel';
 
   // The dock is ship-space scenery, so the ship climbing is drawn as the
@@ -488,8 +499,10 @@ function buildStations(ship, colliders, solid, box, metal) {
   ship.add(kit);
 
   // Power room: three tubes and the lever that feeds each one.
+  const downRed = new THREE.MeshStandardMaterial({ color: '#b8402f', flatShading: true });
   const tubes = [];
   const levers = [];
+  const leverDowns = [];
   TUBE.xs.forEach((x, i) => {
     // Unit-height geometry, scaled by applyState as power moves.
     // Its own material, so it can glow as it overheats.
@@ -507,12 +520,24 @@ function buildStations(ship, colliders, solid, box, metal) {
       )
     );
 
-    const lever = new THREE.Mesh(box(0.22, 0.22, 0.22), brass);
+    // Its own material, so it can flash when the furnace takes a unit (power.js).
+    const lever = new THREE.Mesh(box(0.22, 0.22, 0.22), brass.clone());
     lever.position.set(x, 1.05, TUBE.z - 0.31);
     lever.name = `lever${i}`;
     lever.userData.interact = { label: 'Power up', role: 'engineer', action: 'power', index: i };
     ship.add(lever);
     levers.push(lever);
+
+    // Under each lever, a smaller red handle that sends a unit back to the
+    // spares: red for "out", against the brass "in" lever above it.
+    // It sits on the front face of the lever's pedestal (power_room.glb:
+    // col_lever_pedestal_N, front face at z = 1.98, top at 0.92).
+    const down = new THREE.Mesh(box(0.22, 0.14, 0.12), downRed);
+    down.position.set(x, 0.62, 1.92);
+    down.name = `leverDown${i}`;
+    down.userData.interact = { label: 'Power down', role: 'engineer', action: 'powerDown', index: i };
+    ship.add(down);
+    leverDowns.push(down);
   });
 
   // Helm: the wheel on its mount, spokes so you can see it turn. It sits
@@ -530,6 +555,15 @@ function buildStations(ship, colliders, solid, box, metal) {
     spoke.rotation.y = (i * Math.PI) / 3;
     wheelDisc.add(spoke);
   }
+  // The king spoke: a red knob on the spoke that stands straight up when
+  // the wheel is centred. Six spoke ends look alike every 60 degrees, so
+  // without it a wheel at full lock looks almost centred.
+  const kingKnob = new THREE.Mesh(
+    new THREE.SphereGeometry(0.07, 10, 8),
+    new THREE.MeshStandardMaterial({ color: '#d8432f', flatShading: true })
+  );
+  kingKnob.position.set(0.52, 0, 0);
+  wheelDisc.add(kingKnob);
   wheelMount.add(wheelDisc);
   ship.add(wheelMount);
   wheelMount.updateMatrixWorld(true);
@@ -545,7 +579,7 @@ function buildStations(ship, colliders, solid, box, metal) {
   helmStation.userData.interact = wheelMount.userData.interact; // one label, two targets
   ship.add(helmStation);
 
-  return { tubes, levers, wheelMount, wheelDisc, helmStation, kit };
+  return { tubes, levers, leverDowns, wheelMount, wheelDisc, helmStation, kit };
 }
 
 // The dock: a plank platform with a rail round it, three lockers, the

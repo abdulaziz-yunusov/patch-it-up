@@ -2,7 +2,7 @@
 // joins the two halves of a session: the host simulating, everyone drawing.
 
 import * as THREE from 'three';
-import { HELM_STANCE, SHIP, buildShip, addLights, addSky, applyRolePalette, applyState, groundHeight, hatchShut, takeoffProgress, updateHazards } from './world.js';
+import { DRIFT_METRES, HELM_STANCE, SHIP, buildShip, addLights, addSky, applyRolePalette, applyState, groundHeight, hatchShut, takeoffProgress, updateHazards } from './world.js';
 import { loadDockModel, updateDock, resetDockEffects } from './dock.js';
 import { loadHelmModel, updateHelm, resetHelmEffects } from './helm.js';
 import { loadPowerModel, updatePower, resetPowerEffects } from './power.js';
@@ -108,6 +108,9 @@ const furnaceText = document.getElementById('furnaceText');
 const takeoffTitle = document.getElementById('takeoffTitle');
 const takeoffJob = document.getElementById('takeoffJob');
 const flash = document.getElementById('flash');
+const helmGauge = document.getElementById('helmGauge');
+const helmShip = document.getElementById('helmShip');
+const helmRock = document.getElementById('helmRock');
 const resultBack = document.getElementById('resultBack');
 const lockOverlay = document.getElementById('lockOverlay');
 const statusLine = document.getElementById('status');
@@ -844,6 +847,22 @@ function updateRoundHud(now) {
     flashUntil = now + 500;
   }
   flash.style.opacity = flashUntil > now ? ((flashUntil - now) / 500) * 0.9 : 0;
+
+  // The helm gauge, for whoever holds the wheel.
+  const steeringNow = state.phase === 'flight' && !!state.players[local.id]?.atWheel;
+  helmGauge.hidden = !steeringNow;
+  if (steeringNow) {
+    const pct = (v) => `${((v + 1) / 2) * 100}%`;
+    helmShip.style.left = pct(state.drift);
+    helmShip.classList.toggle('at-edge', Math.abs(state.drift) >= 0.999);
+    helmRock.hidden = !state.rock.active;
+    if (state.rock.active) {
+      const lo = Math.max(-1, state.rock.lane - RULES.rockHitWidth);
+      const hi = Math.min(1, state.rock.lane + RULES.rockHitWidth);
+      helmRock.style.left = pct(lo);
+      helmRock.style.width = `${((hi - lo) / 2) * 100}%`;
+    }
+  }
 }
 
 function updateKit() {
@@ -900,9 +919,10 @@ function updateOwnCharacter(dt, ctx) {
 const JOBS = {
   mechanic: () =>
     `Mechanic: patch the breaches (hold ${keyLabel(settings.keys.interact)}), keep the furnace stoked, and put out fires with the buckets in the engine room.`,
-  engineer: () => 'Engineer: pull the levers to share power. Lift holds her up, engines steer, shields stop rocks.',
+  engineer: () =>
+    'Engineer: the levers put power in, the handles below take it out. Lift holds her up, engines steer, shields stop rocks. Vent hot tubes in time: the valve needs 20 s to recharge.',
   pilot: () =>
-    `Pilot: steer round the rocks. When a storm wall comes, ring the bell (${keyLabel(settings.keys.bell)}) so the crew can brace.`,
+    `Pilot: hold A or D to steer round the rocks; let go and the wheel centres. Keep the gauge's marker out of the red band. When a storm wall comes, ring the bell (${keyLabel(settings.keys.bell)}) so the crew can brace.`,
 };
 
 // The climb: what is happening, then your job, then a last call.
@@ -1248,6 +1268,7 @@ function step(now) {
   if ((state.players[local.id]?.role ?? 'crew') === 'crew') input.flyTap = false; // no flying before the uniform
   input.again = againRequested;
   againRequested = false;
+  predictWheel(dt, input.keys ?? {});
   if (local.isHost) {
     // The host plays through the same pipe as everyone else.
     const own = inputs.get(local.id);
@@ -1267,6 +1288,23 @@ function step(now) {
     joinerTick(input, dt, now, inWorld);
   }
   return dt;
+}
+
+// The wheel as this browser draws it. The host's state.steering is the
+// truth, but it comes back a round trip after a joining pilot presses a
+// key; their own wheel turns at once with the same rule (nextSteering),
+// and drifts back toward the host's answer as it arrives. Only the wheel,
+// the needle and the shoulders use it: the rock, the tilt and the rain
+// show where the host says the ship really is.
+let shownSteering = 0;
+function predictWheel(dt, keys) {
+  const me = state.players[local.id];
+  if (local.isHost || !me?.atWheel || state.phase !== 'flight') {
+    shownSteering = state.steering ?? 0;
+    return;
+  }
+  shownSteering = game.nextSteering(shownSteering, keys, dt);
+  shownSteering += ((state.steering ?? 0) - shownSteering) * Math.min(1, dt * 2);
 }
 
 function joinerTick(input, dt, now, walking) {
@@ -1323,10 +1361,10 @@ startPulse(30, () => {
 // Every browser sets up the scene from the state it has: what is where,
 // and what can be used. Drawing it is the loop's job.
 function syncWorld(now, dt) {
-  applyState(world, state, state.players[local.id]?.atWheel ?? false);
+  applyState(world, state, state.players[local.id]?.atWheel ?? false, shownSteering);
   updateKit();
   updateDock(world, state, local, now);
-  updateHelm(world, state, { camera, view, player, now, dt });
+  updateHelm(world, state, { camera, view, player, now, dt, steering: shownSteering });
   updatePower(world, state, { now, dt });
   updateEngineRoom(world, state, { now, dt });
   updateHazards(world, state, now);
@@ -1335,6 +1373,7 @@ function syncWorld(now, dt) {
 }
 
 const clock = new THREE.Clock();
+let bank = 0; // the ship's lean into a turn, eased
 function loop() {
   const now = performance.now();
   lastFrameAt = now;
@@ -1355,11 +1394,20 @@ function loop() {
 
   const dt = step(now);
 
+  // Bank into the turn: starboard side down when steering to starboard.
+  // Eased, so a tap on the wheel doesn't jerk the camera; none with the
+  // camera motion setting off.
+  const leanTo = state.phase === 'flight' ? (state.steering ?? 0) * 0.05 * motion : 0;
+  bank += (leanTo - bank) * Math.min(1, dt * 3);
+  ship.rotation.x += bank;
+
   if (sessionActive && state.phase === 'gathering') {
     updateGathering(state, local, now, (id) => isTalking(id, now));
     orbitShip(t);
   } else if (sessionActive) {
-    const crewCtx = { kitHolder: state.kit.heldBy, wheelYaw: HELM_STANCE.look, steering: state.steering ?? 0 };
+    // Only one pair of hands is on the wheel: when they are ours, our own
+    // guess at it (shownSteering) is what the shoulders follow.
+    const crewCtx = { kitHolder: state.kit.heldBy, wheelYaw: HELM_STANCE.look, steering: shownSteering };
     crew.update(dt, crewCtx, now);
     updateOwnCharacter(dt, crewCtx);
     view.update(dt);
@@ -1388,7 +1436,8 @@ function loop() {
 
   syncWorld(now, dt);
   const airborne = state.phase === 'takeoff' || state.phase === 'flight';
-  rain.update(dt, settings.rain && sessionActive && inWorld && airborne);
+  // The ship sliding to starboard: the world, and its rain, slide to port.
+  rain.update(dt, settings.rain && sessionActive && inWorld && airborne, -game.sideSpeed() * DRIFT_METRES);
   // The Blender dock swaps in its own lockers once it loads: paint those too.
   if (world.lockers !== paintedLockers) paintRoles();
   countFrame(now);

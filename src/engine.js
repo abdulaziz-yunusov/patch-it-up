@@ -45,7 +45,8 @@ export async function loadEngineModel(world) {
   // rack, and of the crate, points at one interact object.
   const restock = { label: 'Restock planks (hold)', action: 'restock', role: 'mechanic', hold: RULES.restockSeconds };
   const fuses = { label: 'Take a spare fuse', action: 'takeFuse', role: 'mechanic' };
-  const buckets = { label: 'Take a water bucket', action: 'takeBucket', role: 'mechanic' };
+  // Anyone can take a bucket: a fire is the whole crew's emergency.
+  const buckets = { label: 'Take a water bucket', action: 'takeBucket' };
   model.traverse((obj) => {
     if (!obj.isMesh) return;
     if (/^(fire_bucket|bucket_rail)/.test(obj.name)) obj.userData.interact = buckets;
