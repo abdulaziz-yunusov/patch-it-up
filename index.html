@@ -1,0 +1,577 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Patch It Up!</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><ellipse cx='16' cy='13' rx='11' ry='8' fill='%23c86a33'/><rect x='8' y='21' width='16' height='6' rx='1' fill='%238a5a36'/></svg>"
+    />
+    <script type="module" crossorigin src="/patch-it-up/assets/index-BClWi5Zj.js"></script>
+    <link rel="stylesheet" crossorigin href="/patch-it-up/assets/index-CtYEcDmT.css">
+  </head>
+  <body>
+    <!-- One 3D canvas lives behind these screens; only one screen shows at a time. -->
+
+    <!-- The start view: a stormy sky with the ship on the right, the
+         title and four buttons on the left, your name in the corner. -->
+    <div id="menu" class="screen">
+      <svg class="menu-art" viewBox="0 0 1440 810" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+        <g class="menu-clouds">
+          <rect x="-120" y="40" width="620" height="170" rx="85" fill="#2d3459" />
+          <rect x="260" y="-40" width="520" height="150" rx="75" fill="#343c66" />
+          <rect x="860" y="10" width="700" height="190" rx="95" fill="#2d3459" />
+          <rect x="1080" y="120" width="460" height="120" rx="60" fill="#3a4370" />
+          <rect x="-80" y="640" width="760" height="260" rx="130" fill="#1b2039" />
+          <rect x="820" y="660" width="760" height="240" rx="120" fill="#1b2039" />
+        </g>
+        <g class="menu-rain" stroke="#4a5587" stroke-width="2" stroke-linecap="round">
+          <line x1="560" y1="260" x2="548" y2="290" /><line x1="640" y1="420" x2="628" y2="450" /><line x1="700" y1="180" x2="688" y2="210" />
+          <line x1="1320" y1="300" x2="1308" y2="330" /><line x1="1380" y1="520" x2="1368" y2="550" /><line x1="760" y1="600" x2="748" y2="630" />
+          <line x1="1240" y1="640" x2="1228" y2="670" /><line x1="600" y1="560" x2="588" y2="590" /><line x1="1400" y1="180" x2="1388" y2="210" />
+        </g>
+        <polyline class="menu-bolt" points="1250,40 1222,120 1244,120 1210,210" fill="none" stroke="#ffd84d" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" />
+        <g class="menu-ship">
+          <ellipse cx="1010" cy="300" rx="300" ry="190" fill="none" stroke="#7fd4ff" stroke-width="2" stroke-dasharray="8 10" opacity="0.5" />
+          <path d="M775 250 L725 210 L738 250 L725 290 Z" fill="#8e4a26" />
+          <ellipse cx="1000" cy="240" rx="240" ry="92" fill="#c86a33" />
+          <path d="M830 185 Q1000 220 1170 185" fill="none" stroke="#a5552a" stroke-width="3" />
+          <path d="M762 240 Q1000 268 1238 240" fill="none" stroke="#a5552a" stroke-width="3" />
+          <path d="M830 298 Q1000 262 1170 298" fill="none" stroke="#a5552a" stroke-width="3" />
+          <g transform="rotate(-12 1080 215)">
+            <rect x="1040" y="203" width="84" height="24" rx="4" fill="#d9a066" stroke="#5a3418" stroke-width="3" />
+            <circle cx="1050" cy="215" r="3" fill="#3b2516" /><circle cx="1114" cy="215" r="3" fill="#3b2516" />
+          </g>
+          <g transform="rotate(16 900 280)">
+            <rect x="866" y="270" width="70" height="20" rx="4" fill="#d9a066" stroke="#5a3418" stroke-width="3" />
+            <circle cx="875" cy="280" r="3" fill="#3b2516" /><circle cx="927" cy="280" r="3" fill="#3b2516" />
+          </g>
+          <g stroke="#3b2516" stroke-width="3">
+            <line x1="890" y1="322" x2="900" y2="378" /><line x1="1000" y1="332" x2="1000" y2="378" /><line x1="1110" y1="322" x2="1100" y2="378" />
+          </g>
+          <path d="M840 378 L1170 378 Q1235 378 1212 428 L1170 480 L880 480 Q842 480 836 440 Z" fill="#6b4a33" stroke="#3b2516" stroke-width="4" />
+          <rect x="878" y="398" width="54" height="36" rx="6" fill="#ffd58a" />
+          <rect x="972" y="398" width="54" height="36" rx="6" fill="#ffd58a" />
+          <rect x="1066" y="398" width="54" height="36" rx="6" fill="#9fd3ec" />
+          <rect x="1196" y="400" width="44" height="14" rx="4" fill="#3d3f47" />
+          <ellipse cx="818" cy="428" rx="8" ry="38" fill="#9aa3b5" />
+          <rect x="818" y="420" width="22" height="16" fill="#3d3f47" />
+          <circle cx="1140" cy="470" r="9" fill="#ffb347" />
+          <path d="M1150 476 Q1170 520 1150 560 Q1135 590 1160 630" fill="none" stroke="#6f7894" stroke-width="10" stroke-linecap="round" opacity="0.7" />
+        </g>
+      </svg>
+
+      <div class="menu-main">
+        <div>
+          <h1 class="menu-title">Patch<br />It Up!</h1>
+          <p class="menu-tagline">Keep the ship flying. Together.</p>
+        </div>
+        <div class="menu-buttons">
+          <p id="menuNote" class="menu-note" role="status" hidden></p>
+          <button id="hostGame" type="button" class="menu-btn primary">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2-6 4 12 2-6h6" /></svg>
+            Host game
+          </button>
+          <button id="joinGame" type="button" class="menu-btn">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" /><path d="M10 17l5-5-5-5" /><path d="M15 12H3" /></svg>
+            Join game
+          </button>
+          <button id="training" type="button" class="menu-btn">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z" /></svg>
+            Training
+          </button>
+          <button id="settings" type="button" class="menu-btn">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></svg>
+            Settings
+          </button>
+        </div>
+      </div>
+
+      <div class="menu-footer">
+        <span>3 players · online co-op</span>
+        <span>Prototype v0.1</span>
+        <button id="nameChip" type="button" class="name-chip" aria-label="Change your name">
+          Playing as <span id="nameShown" class="name-shown">Deckhand</span>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="M13 7l4 4" /></svg>
+        </button>
+        <label class="name-edit" hidden>
+          Playing as
+          <input id="playerName" type="text" maxlength="12" placeholder="Deckhand" autocomplete="off" aria-label="Your name" />
+        </label>
+      </div>
+
+      <div class="menu-roles role-key" aria-label="The three roles"></div>
+    </div>
+
+    <!-- Join a game: your name and the host's room code, recent crews to
+         rejoin with one click, and what to try when it will not connect. -->
+    <div id="join" class="screen" hidden>
+      <svg class="sky-art" viewBox="0 0 1440 810" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+        <rect x="-120" y="40" width="620" height="170" rx="85" fill="#2d3459" />
+        <rect x="860" y="10" width="700" height="190" rx="95" fill="#2d3459" />
+        <rect x="-80" y="640" width="760" height="260" rx="130" fill="#1b2039" />
+        <rect x="820" y="660" width="760" height="240" rx="120" fill="#1b2039" />
+      </svg>
+
+      <div class="gather">
+        <div class="gather-head">
+          <button id="joinBack" type="button" class="icon-btn" aria-label="Back to main menu">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
+          </button>
+          <h2 class="gather-title">Join a game</h2>
+        </div>
+
+        <div class="gather-grid">
+          <form id="joinForm" class="code-card join-card" novalidate>
+            <i class="rivet tl"></i><i class="rivet tr"></i><i class="rivet bl"></i><i class="rivet br"></i>
+            <div class="join-field">
+              <label for="joinName" class="card-label">Your name</label>
+              <input id="joinName" class="paper-input" type="text" maxlength="12" placeholder="Deckhand" autocomplete="off" spellcheck="false" />
+            </div>
+            <div class="join-field">
+              <label for="roomCode" class="card-label">Room code</label>
+              <input id="roomCode" class="paper-input code-input" type="text" maxlength="8" placeholder="CRAB-7" autocomplete="off" spellcheck="false" aria-describedby="codeHint joinError" />
+              <div id="codeHint" class="join-hint">Ask your host for the code shown on their screen.</div>
+            </div>
+            <div id="joinError" class="join-error" role="alert" hidden>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l9 16H3z" /><path d="M12 10v4" /><path d="M12 17v.5" /></svg>
+              <div>
+                <strong id="joinErrorTitle"></strong>
+                <span id="joinErrorDetail"></span>
+              </div>
+            </div>
+            <button id="climbAboard" type="submit" class="menu-btn primary go-btn">
+              <i class="spinner" aria-hidden="true"></i>
+              <span id="climbLabel">Climb aboard</span>
+              <svg class="arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /><path d="M13 6l6 6-6 6" /></svg>
+            </button>
+          </form>
+
+          <div class="gather-col">
+            <section class="dark-card voice-check">
+              <div class="card-label">Voice check</div>
+              <div class="voice-row">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0" /><path d="M12 18v3" /></svg>
+                <div class="voice-text">
+                  <div class="voice-status" role="status">Microphone off</div>
+                  <div class="meter"><div class="meter-fill"></div><i class="meter-gate"></i></div>
+                </div>
+              </div>
+              <button type="button" class="small-btn voice-retry" hidden>Turn on microphone</button>
+              <label class="check">
+                <input type="checkbox" class="voice-ptt" />
+                <span>Push-to-talk (hold <span data-key="talk">V</span>)</span>
+              </label>
+            </section>
+
+            <section class="dark-card">
+              <div class="card-label">Recent crews</div>
+              <div id="recentCrews" class="recent-list"></div>
+            </section>
+
+            <div class="tip-card">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 8v5" /><path d="M12 16.5v.5" /></svg>
+              <p>Can't connect? Pause your ad blocker for this site, or try another network. Some school and work Wi-Fi blocks player-to-player connections.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- The crew screen: the host's room code and who has joined, before
+         anyone walks onto the dock. Joiners see it too, waiting. -->
+    <div id="gathering" class="screen" hidden>
+      <svg class="sky-art" viewBox="0 0 1440 810" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+        <rect x="-120" y="40" width="620" height="170" rx="85" fill="#2d3459" />
+        <rect x="860" y="10" width="700" height="190" rx="95" fill="#2d3459" />
+        <rect x="-80" y="640" width="760" height="260" rx="130" fill="#1b2039" />
+        <rect x="820" y="660" width="760" height="240" rx="120" fill="#1b2039" />
+      </svg>
+
+      <div class="gather">
+        <div class="gather-head">
+          <button id="gatherBack" type="button" class="icon-btn" aria-label="Back to main menu">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
+          </button>
+          <h2 id="gatherTitle" class="gather-title">Host a game</h2>
+        </div>
+
+        <div class="gather-grid">
+          <div class="gather-col">
+            <section class="code-card">
+              <i class="rivet tl"></i><i class="rivet tr"></i><i class="rivet bl"></i><i class="rivet br"></i>
+              <div class="card-label">Your room code</div>
+              <div class="code-row">
+                <div id="gatherCode" class="code-big">····</div>
+                <button id="copyCode" type="button" class="small-btn">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></svg>
+                  <span id="copyLabel">Copy</span>
+                </button>
+              </div>
+              <p class="code-hint"><span id="roomFullTag" class="full-tag" hidden>Room full</span><span id="gatherCodeHint"></span></p>
+            </section>
+
+            <section class="dark-card voice-check">
+              <div class="card-label">Voice check</div>
+              <div class="voice-row">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11a7 7 0 0 0 14 0" /><path d="M12 18v3" /></svg>
+                <div class="voice-text">
+                  <div class="voice-status" role="status">Microphone off</div>
+                  <div class="meter"><div class="meter-fill"></div><i class="meter-gate"></i></div>
+                </div>
+              </div>
+              <button type="button" class="small-btn voice-retry" hidden>Turn on microphone</button>
+              <label class="check">
+                <input type="checkbox" class="voice-ptt" />
+                <span>Push-to-talk (hold <span data-key="talk">V</span>)</span>
+              </label>
+            </section>
+          </div>
+
+          <div class="gather-col">
+            <section class="dark-card">
+              <div class="crew-head">
+                <div class="card-label">Crew</div>
+                <div id="crewCount" class="crew-count">1 of 3 aboard</div>
+              </div>
+              <div id="crewList" class="crew-list"></div>
+            </section>
+
+            <div class="gather-go">
+              <button id="goToDock" type="button" class="menu-btn primary go-btn">
+                Go to the dock
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14" /><path d="M13 6l6 6-6 6" /></svg>
+              </button>
+              <p id="gatherHint" class="gather-hint"></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Shown whenever you are in the world, at the dock or in the air. -->
+    <div id="play" hidden>
+      <div id="crosshair"></div>
+      <div id="prompt" hidden></div>
+      <div id="progress" hidden><div id="progressFill"></div></div>
+      <div id="status"></div>
+      <div id="toast" hidden></div>
+      <div id="subtitle" aria-live="polite" hidden></div>
+      <!-- Voice: who is talking, who is muted, and your own mic. -->
+      <div id="voiceHud"></div>
+      <div id="topAlerts">
+        <div id="alert" role="alert" hidden><strong id="alertTitle"></strong><span id="alertText"></span></div>
+        <div id="raidAlert" role="alert" hidden><strong id="raidTitle"></strong><span id="raidLine"></span></div>
+        <div id="callout" role="status" hidden><span id="calloutWho"></span><strong id="calloutText"></strong></div>
+      </div>
+      <div id="lockOverlay">
+        <button id="clickToPlay" type="button" class="primary big">Click to play</button>
+        <button id="openSettings" type="button">Settings</button>
+        <button id="leaveShip" type="button">Leave ship</button>
+      </div>
+    </div>
+
+    <div id="lobby" class="screen" hidden>
+      <div id="banner"></div>
+      <div class="hud">
+        <span data-key="move">WASD</span> move · mouse look · <span data-key="interact">E</span> use · <span data-key="callout">Q</span> call out · Esc frees the mouse<br />
+        <span data-key="camera">C</span> third person · hold <span data-key="lookAround">Left Alt</span> to look at yourself · <span data-key="wave">G</span> wave · <span data-key="jump">Space</span> twice to fly, <span data-key="flyDown">Left Shift</span> down<br />
+        Take a uniform from a locker, then up the gangplank. The ship leaves when the whole crew is aboard; short of three, once the host rings the dock bell.<br />
+        Ring the bell, shout down the tube, try a hat at the mirror, kick the crates.
+      </div>
+    </div>
+
+    <!-- The climb away from the dock: what's happening, and your job. -->
+    <div id="takeoff" class="screen" hidden>
+      <div id="takeoffCard">
+        <div id="takeoffTitle">Casting off!</div>
+        <div id="takeoffJob"></div>
+      </div>
+      <div class="hud">
+        <span data-key="move">WASD</span> move · mouse look · <span data-key="interact">E</span> use · <span data-key="drop">Right click</span> drop · <span data-key="callout">Q</span> call out · <span data-key="camera">C</span> camera · Esc frees the mouse
+      </div>
+    </div>
+
+    <div id="flight" class="screen" hidden>
+      <div id="roundHud">
+        <div id="timer">3:00</div>
+        <div id="altitudeBar"><div id="altitudeFill"></div></div>
+        <div id="altitudeText">100%</div>
+        <div id="furnaceBar"><div id="furnaceFill"></div></div>
+        <div id="furnaceText">Furnace</div>
+      </div>
+      <div id="flash"></div>
+      <!-- What the whole crew needs to see: the tubes, the power budget,
+           and the mechanic's supplies. -->
+      <div id="shipPanel" aria-label="Ship systems">
+        <div class="panel-head"><span>Power</span><span class="panel-sub">heat</span></div>
+        <div class="tube-row" data-tube="0">
+          <span class="tube-name">Engines</span>
+          <span class="pips"><i></i><i></i><i></i><i></i></span>
+          <span class="heat"><span></span></span>
+          <span class="fuse-tag" hidden>FUSE</span>
+        </div>
+        <div class="tube-row" data-tube="1">
+          <span class="tube-name">Shields</span>
+          <span class="pips"><i></i><i></i><i></i><i></i></span>
+          <span class="heat"><span></span></span>
+          <span class="fuse-tag" hidden>FUSE</span>
+        </div>
+        <div class="tube-row" data-tube="2">
+          <span class="tube-name">Lift</span>
+          <span class="pips"><i></i><i></i><i></i><i></i></span>
+          <span class="heat"><span></span></span>
+          <span class="fuse-tag" hidden>FUSE</span>
+        </div>
+        <div class="panel-foot"><span id="budgetText">Budget 6</span><span id="budgetNote"></span></div>
+        <div class="panel-foot supplies"><span id="plankText">Kit 3 planks</span><span id="fuseText">Fuses 3</span></div>
+        <div id="hazardRow" class="panel-foot hazard" hidden><span id="hazardText"></span></div>
+        <div id="raidRow" class="panel-foot hazard" hidden><span id="raidText"></span></div>
+      </div>
+      <div class="hud">
+        <span data-key="move">WASD</span> move · mouse look · <span data-key="interact">E</span> use · <span data-key="drop">Right click</span> drop · <span data-key="callout">Q</span> call out · <span data-key="camera">C</span> camera · Esc frees the mouse
+      </div>
+    </div>
+
+    <!-- Filled in by step 7 (win or crash). -->
+    <div id="result" class="screen panel-screen" hidden>
+      <div class="panel result-panel">
+        <h2 id="resultTitle">Landed!</h2>
+        <p id="resultDetail"></p>
+        <div id="resultStars" class="result-stars" role="img"></div>
+        <ul id="resultGoals" class="result-goals"></ul>
+        <p id="resultRecord" class="result-record"></p>
+        <ul id="resultUnlocks" class="result-news"></ul>
+        <div id="resultCrew" class="result-crew"></div>
+        <div class="buttons">
+          <button id="resultBack" type="button" class="primary">Back to dock</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings: over whatever screen opened it (the menu, or the game
+         while the mouse is free). Every change applies and saves at once. -->
+    <div id="settingsPage" class="settings-overlay" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" hidden>
+      <svg class="sky-art" viewBox="0 0 1440 810" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+        <rect x="-120" y="40" width="620" height="170" rx="85" fill="#2d3459" />
+        <rect x="860" y="10" width="700" height="190" rx="95" fill="#2d3459" />
+        <rect x="-80" y="640" width="760" height="260" rx="130" fill="#1b2039" />
+      </svg>
+
+      <div class="settings-wrap">
+        <div class="gather-head settings-head">
+          <button id="settingsBack" type="button" class="icon-btn" aria-label="Close settings">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
+          </button>
+          <h2 id="settingsTitle" class="gather-title">Settings</h2>
+        </div>
+
+        <div class="settings-body">
+          <div class="settings-nav" role="tablist" aria-label="Settings sections">
+            <button type="button" class="tab-btn" role="tab" id="tab-audio" aria-controls="pane-audio" data-tab="audio">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5L6 9H2v6h4l5 4z" /><path d="M15.5 8.5a5 5 0 0 1 0 7" /><path d="M19 5a10 10 0 0 1 0 14" /></svg>
+              Audio and voice
+            </button>
+            <button type="button" class="tab-btn" role="tab" id="tab-controls" aria-controls="pane-controls" data-tab="controls">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="4" /><path d="M7 10v4M5 12h4" /><circle cx="16" cy="11" r="1" /><circle cx="18" cy="13" r="1" /></svg>
+              Controls
+            </button>
+            <button type="button" class="tab-btn" role="tab" id="tab-video" aria-controls="pane-video" data-tab="video">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="20" height="14" rx="2" /><path d="M8 21h8M12 18v3" /></svg>
+              Video
+            </button>
+            <button type="button" class="tab-btn" role="tab" id="tab-access" aria-controls="pane-access" data-tab="access">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="4" r="2" /><path d="M4 8l8 2 8-2" /><path d="M12 10v5l-4 6M12 15l4 6" /></svg>
+              Accessibility
+            </button>
+          </div>
+
+          <div class="settings-panel">
+            <section id="pane-audio" class="pane" role="tabpanel" aria-labelledby="tab-audio">
+              <h3 class="pane-title">Audio and voice</h3>
+              <div class="set-row">
+                <label for="set-master" class="set-label">Master volume</label>
+                <input id="set-master" type="range" min="0" max="100" step="1" data-setting="master" data-unit="%" />
+                <output for="set-master" class="set-value"></output>
+              </div>
+              <div class="set-row">
+                <label for="set-sfx" class="set-label">Sound effects</label>
+                <input id="set-sfx" type="range" min="0" max="100" step="1" data-setting="sfx" data-unit="%" />
+                <output for="set-sfx" class="set-value"></output>
+              </div>
+              <div class="set-row soon">
+                <label for="set-music" class="set-label">Music <span class="soon-chip">Soon</span></label>
+                <input id="set-music" type="range" min="0" max="100" value="50" disabled />
+                <output class="set-value">50%</output>
+              </div>
+              <div class="set-divider"></div>
+              <div class="set-row">
+                <label for="set-voices" class="set-label">Teammates' voices</label>
+                <input id="set-voices" type="range" min="0" max="100" step="1" data-setting="voices" data-unit="%" />
+                <output for="set-voices" class="set-value"></output>
+              </div>
+              <div class="set-row">
+                <label for="set-mic" class="set-label grow">Microphone</label>
+                <select id="set-mic" class="set-select" data-setting="micId"><option value="">Default microphone</option></select>
+              </div>
+              <fieldset class="set-row">
+                <legend class="set-label">Voice mode</legend>
+                <div class="radio-row">
+                  <label><input type="radio" name="vmode" value="open" data-setting="voiceMode" />Open mic</label>
+                  <label><input type="radio" name="vmode" value="ptt" data-setting="voiceMode" />Push-to-talk (hold <span data-key="talk">V</span>)</label>
+                </div>
+              </fieldset>
+              <div id="sensRow" class="set-row">
+                <label for="set-thr" class="set-label">Mic sensitivity</label>
+                <input id="set-thr" type="range" min="0" max="100" step="1" data-setting="micSensitivity" data-unit="%" />
+                <output for="set-thr" class="set-value"></output>
+              </div>
+              <div class="set-row">
+                <div class="set-text">
+                  <span class="set-label">Mic test</span>
+                  <span id="micTestNote" class="set-sub">Speak: the bar turns green when the crew can hear you.</span>
+                </div>
+                <div id="micTest" class="meter mic-test"><div class="meter-fill"></div><i class="meter-gate"></i></div>
+              </div>
+              <div class="set-row">
+                <div class="set-text">
+                  <label for="set-mute" class="set-label">Mute my microphone</label>
+                  <span class="set-sub">Or press <span data-key="mute">M</span> at any time.</span>
+                </div>
+                <input id="set-mute" type="checkbox" class="set-check" data-setting="micMuted" />
+              </div>
+              <div class="set-row">
+                <div class="set-text">
+                  <label for="set-voice3d" class="set-label">Voices from where people stand</label>
+                  <span class="set-sub">Left and right, near and far, muffled through bulkheads.</span>
+                </div>
+                <input id="set-voice3d" type="checkbox" class="set-check" data-setting="voice3d" />
+              </div>
+            </section>
+
+            <section id="pane-controls" class="pane" role="tabpanel" aria-labelledby="tab-controls" hidden>
+              <h3 class="pane-title">Controls</h3>
+              <div class="set-row">
+                <label for="set-sens" class="set-label">Mouse sensitivity</label>
+                <input id="set-sens" type="range" min="0" max="100" step="1" data-setting="sensitivity" data-unit="x" />
+                <output for="set-sens" class="set-value"></output>
+              </div>
+              <div class="set-row">
+                <label for="set-invert" class="set-label grow">Invert mouse Y</label>
+                <input id="set-invert" type="checkbox" class="set-check" data-setting="invertY" />
+              </div>
+              <p class="set-hint">Click Rebind, then press a key or mouse button. Esc cancels.</p>
+              <div id="bindList" class="bind-grid"></div>
+              <p id="bindNote" class="bind-note" role="status"></p>
+            </section>
+
+            <section id="pane-video" class="pane" role="tabpanel" aria-labelledby="tab-video" hidden>
+              <h3 class="pane-title">Video</h3>
+              <div class="set-row">
+                <label for="set-fov" class="set-label">Field of view</label>
+                <input id="set-fov" type="range" min="60" max="100" step="1" data-setting="fov" data-unit="°" />
+                <output for="set-fov" class="set-value"></output>
+              </div>
+              <div class="set-row">
+                <div class="set-text">
+                  <label for="set-quality" class="set-label">Graphics quality</label>
+                  <span class="set-sub">Lower it if the game stutters on a laptop.</span>
+                </div>
+                <select id="set-quality" class="set-select" data-setting="quality">
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
+              <div class="set-row">
+                <label for="set-fps" class="set-label grow">Show FPS counter</label>
+                <input id="set-fps" type="checkbox" class="set-check" data-setting="showFps" />
+              </div>
+              <div class="set-row">
+                <div class="set-text">
+                  <label for="set-rain" class="set-label">Rain on windows</label>
+                  <span class="set-sub">Rain outside the ship while it flies.</span>
+                </div>
+                <input id="set-rain" type="checkbox" class="set-check" data-setting="rain" />
+              </div>
+            </section>
+
+            <section id="pane-access" class="pane" role="tabpanel" aria-labelledby="tab-access" hidden>
+              <h3 class="pane-title">Accessibility</h3>
+              <div class="set-row">
+                <div class="set-text">
+                  <label for="set-cb" class="set-label">Colorblind mode</label>
+                  <span class="set-sub">Changes role colors so mechanic and engineer look different.</span>
+                </div>
+                <select id="set-cb" class="set-select" data-setting="colorblind">
+                  <option value="off">Off</option>
+                  <option value="redgreen">Red-green</option>
+                  <option value="blueyellow">Blue-yellow</option>
+                </select>
+              </div>
+              <div id="paletteSwatch" class="role-key palette-swatch"></div>
+              <div class="set-row">
+                <div class="set-text">
+                  <label for="set-sym" class="set-label">Role symbols on players</label>
+                  <span class="set-sub">Wrench, lightning bolt and steering wheel over every teammate and next to every role color.</span>
+                </div>
+                <input id="set-sym" type="checkbox" class="set-check" data-setting="roleSymbols" />
+              </div>
+              <div class="set-row">
+                <div class="set-text">
+                  <label for="set-sub" class="set-label">Subtitles for alarms</label>
+                  <span class="set-sub">Breaches, rocks, bells and warnings written at the bottom of the screen.</span>
+                </div>
+                <input id="set-sub" type="checkbox" class="set-check" data-setting="subtitles" />
+              </div>
+              <div class="set-divider"></div>
+              <div class="set-row">
+                <div class="set-text">
+                  <label for="set-shake" class="set-label">Camera roll and shake</label>
+                  <span class="set-sub">Turn off to keep the camera level while the ship rocks.</span>
+                </div>
+                <input id="set-shake" type="checkbox" class="set-check" data-setting="cameraShake" />
+              </div>
+              <div id="rollRow" class="set-row">
+                <label for="set-roll" class="set-label">Shake strength</label>
+                <input id="set-roll" type="range" min="0" max="100" step="1" data-setting="cameraMotion" data-unit="%" />
+                <output for="set-roll" class="set-value"></output>
+              </div>
+              <div class="set-row">
+                <div class="set-text">
+                  <label for="set-bob" class="set-label">Head bob</label>
+                  <span class="set-sub">Turn off if moving around makes you feel sick.</span>
+                </div>
+                <input id="set-bob" type="checkbox" class="set-check" data-setting="headBob" />
+              </div>
+              <div class="set-row">
+                <div class="set-text">
+                  <label for="set-txt" class="set-label">Text size</label>
+                  <span class="set-sub">In-game text: prompts, timer, messages and subtitles.</span>
+                </div>
+                <select id="set-txt" class="set-select" data-setting="textSize">
+                  <option value="normal">Normal</option>
+                  <option value="large">Large</option>
+                  <option value="xlarge">Extra large</option>
+                </select>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <div class="settings-foot">
+          <button id="settingsReset" type="button" class="small-btn reset-btn">Reset to defaults</button>
+          <button id="settingsDone" type="button" class="menu-btn primary done-btn">Done</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Frames per second, when the setting asks for it. -->
+    <div id="fps" hidden></div>
+
+    <!-- The line to the host dropped: shown on any screen while we get back aboard. -->
+    <div id="netNote" role="status" hidden><span class="net-spinner" aria-hidden="true"></span>Connection lost · reconnecting…</div>
+
+  </body>
+</html>
