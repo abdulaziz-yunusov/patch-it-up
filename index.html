@@ -367,18 +367,34 @@
       </div>
     </div>
 
-    <!-- Filled in by step 7 (win or crash). -->
+    <!-- The last few seconds of a flight: going down, or coming in. -->
+    <div id="ending" class="screen" hidden>
+      <div id="endingCard" role="status" aria-live="assertive">
+        <div id="endingTitle"></div>
+        <div id="endingLine"></div>
+      </div>
+    </div>
+
+    <!-- How the flight ended, and why. -->
     <div id="result" class="screen panel-screen" hidden>
       <div class="panel result-panel">
         <h2 id="resultTitle">Landed!</h2>
         <p id="resultDetail"></p>
+        <!-- Why she went down: the biggest drain, what to do about it, and
+             where the height went. Hidden after a landing. -->
+        <div id="resultWhy" class="result-why" hidden>
+          <p id="resultCause" class="cause"></p>
+          <p id="resultTip" class="tip"></p>
+          <ul id="resultBreakdown" class="breakdown" aria-label="Where the height went"></ul>
+        </div>
         <div id="resultStars" class="result-stars" role="img"></div>
         <ul id="resultGoals" class="result-goals"></ul>
         <p id="resultRecord" class="result-record"></p>
         <ul id="resultUnlocks" class="result-news"></ul>
         <div id="resultCrew" class="result-crew"></div>
         <div class="buttons">
-          <button id="resultBack" type="button" class="primary">Back to dock</button>
+          <button id="resultAgain" type="button" class="primary">Fly again</button>
+          <button id="resultBack" type="button">Back to dock</button>
         </div>
       </div>
     </div>

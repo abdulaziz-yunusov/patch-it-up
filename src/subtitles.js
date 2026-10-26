@@ -53,8 +53,12 @@ export function updateSubtitles(state, now, on, el) {
   seen = remember(state);
   if (was) {
     const flying = state.phase === 'flight';
-    if (state.phase === 'takeoff' && was.phase === 'lobby') say('[Moorings released. Climbing!]', now);
+    if (state.phase === 'takeoff' && (was.phase === 'lobby' || was.phase === 'result')) say('[Moorings released. Climbing!]', now);
     if (state.phase === 'flight' && was.phase === 'takeoff') say('[Hatch shut. The storm hits!]', now);
+    if (state.phase === 'ending' && was.phase !== 'ending') {
+      const line = { landed: '[Harbour in sight! Bringing her in]', burned: '[Fire in every room! She is going down]' };
+      say(line[state.ending?.kind] ?? '[No height left! She is going down]', now);
+    }
     for (const [id, open] of Object.entries(state.breaches)) {
       if (open && !was.breaches[id]) say(`[Hull breach in the ${ROOM_NAMES[SPOT_ROOM[id]] ?? 'hull'}!]`, now);
     }

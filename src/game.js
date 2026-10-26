@@ -344,6 +344,7 @@ export function douseFire(room, player) {
 export function ignite(room) {
   if (!ROOMS.includes(room) || state.fires[room]) return false;
   state.fires[room] = { burn: 0, spread: 0, water: 0 };
+  if (state.log && !state.log.firstFire) state.log.firstFire = room;
   if (room === 'helm') {
     // Nobody can hold a burning wheel: the pilot lets go.
     for (const player of Object.values(state.players)) player.atWheel = false;
@@ -409,7 +410,13 @@ function openBreach(side = 0) {
   const spot = pool[Math.floor(Math.random() * pool.length)];
   state.breaches[spot.id] = true;
   state.opened += 1;
+  noteTear(spot.room);
   return spot;
+}
+
+function noteTear(room) {
+  const torn = state.log?.torn;
+  if (torn && room in torn) torn[room] += 1;
 }
 
 // E on a lever takes a spare unit if the furnace has made one, and
@@ -578,6 +585,7 @@ export function startRound() {
   state.kit.planks = RULES.kitPlanks;
   state.fires = { engine: null, power: null, helm: null };
   state.storm = { active: false, left: 0, warned: false, hits: 0 };
+  state.ending = null;
   state.raid = newRaid();
   state.log = newLog();
   state.stats = {};
@@ -624,6 +632,7 @@ export function tickFlight(dt, crew = {}) {
     RULES.sinkRate -
     openCount() * RULES.altitudeLossPerBreach -
     hookCount() * RULES.hookDrag;
+  noteLosses(dt);
   state.altitude = clamp(state.altitude + state.climb * dt, gentle ? 30 : 0, RULES.altitudeStart);
 
   // The helm answers slowly when the engines are starved, and barely at
@@ -770,6 +779,7 @@ function tickStorm(dt, crew) {
     for (let i = 0; i < Math.max(0, RULES.stormSafeShields - shields); i++) openBreach();
     if (shields < 2 && Math.random() < 0.5) ignite(ROOMS[Math.floor(Math.random() * ROOMS.length)]);
   }
+  if (state.log.lost) state.log.lost.storm += Math.min(state.altitude, RULES.stormAltitudeLoss);
   state.altitude = Math.max(0, state.altitude - RULES.stormAltitudeLoss);
   for (const player of Object.values(state.players)) {
     if (player.braced) continue;
@@ -965,10 +975,56 @@ function endRaid(ending) {
   raid.boarders = {}; // looters climb back with the goods
 }
 
+// Where the height goes, for the result screen's "why you went down".
+// Each drain is counted as it bleeds altitude away, and Lift's give-back
+// only as far as it is used: at the top, what would climb past full is
+// wasted. So drains minus lift is always the height actually lost.
+// Called with state.climb worked out, before the altitude moves.
+function noteLosses(dt) {
+  const lost = state.log.lost;
+  if (!lost) return;
+  lost.sink += RULES.sinkRate * dt;
+  for (const [id, open] of Object.entries(state.breaches)) {
+    if (open) lost.holes[ROOM_OF[id]] += RULES.altitudeLossPerBreach * dt;
+  }
+  lost.hooks += hookCount() * RULES.hookDrag * dt;
+  const wasted = Math.max(0, state.altitude + state.climb * dt - RULES.altitudeStart);
+  lost.lift += Math.max(0, livePower(2) * RULES.liftPerUnit * dt - wasted);
+  if (state.heat < 0.25) state.log.cold += dt;
+}
+
+// The flight is over. Not at once: she goes down (or burns, or comes in to
+// the harbour) for a few seconds first, then the result screen.
 function endRound(result) {
   state.result = result;
-  state.phase = 'result';
+  state.phase = 'ending';
+  state.ending = { kind: result, t: 0 };
   state.rock.active = false;
+  state.storm.active = false;
+}
+
+export const endingSeconds = (kind) => (kind === 'landed' ? RULES.landingSeconds : RULES.sinkingSeconds);
+
+export function tickEnding(dt) {
+  if (state.phase !== 'ending' || !state.ending) return;
+  state.ending.t += dt;
+  if (state.ending.t >= endingSeconds(state.ending.kind)) {
+    state.phase = 'result';
+  }
+}
+
+// From the result screen straight into the air again: the same crew, in
+// the same uniforms, still aboard. No walk back up the gangplank.
+export function flyAgain() {
+  if (state.phase !== 'result') return false;
+  state.countdown = null;
+  state.kit.heldBy = null;
+  state.kit.x = KIT_HOME.x;
+  state.kit.y = KIT_HOME.y;
+  state.kit.z = KIT_HOME.z;
+  for (const player of Object.values(state.players)) player.atWheel = false;
+  castOff();
+  return true;
 }
 
 // From the result screen back to the dock, uniforms still on.
@@ -1091,6 +1147,7 @@ export function tearHole(id) {
   if (state.breaches[id] || !ROOM_OF[id]) return false;
   state.breaches[id] = true;
   state.opened += 1;
+  noteTear(ROOM_OF[id]);
   return true;
 }
 
