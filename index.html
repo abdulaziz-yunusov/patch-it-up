@@ -8,8 +8,8 @@
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><ellipse cx='16' cy='13' rx='11' ry='8' fill='%23c86a33'/><rect x='8' y='21' width='16' height='6' rx='1' fill='%238a5a36'/></svg>"
     />
-    <script type="module" crossorigin src="/patch-it-up/assets/index-emBYwl6g.js"></script>
-    <link rel="stylesheet" crossorigin href="/patch-it-up/assets/index-N5hw6b9b.css">
+    <script type="module" crossorigin src="/patch-it-up/assets/index-QEzBTWqC.js"></script>
+    <link rel="stylesheet" crossorigin href="/patch-it-up/assets/index-EFreDzbz.css">
   </head>
   <body>
     <!-- One 3D canvas lives behind these screens; only one screen shows at a time. -->
@@ -329,6 +329,13 @@
         </div>
       </div>
       <div id="flash"></div>
+      <!-- The job list: what needs doing now, for the jobs you cover. -->
+      <div id="jobList" aria-live="polite" hidden>
+        <div id="jobTitle" class="job-title"></div>
+        <ul id="jobItems"></ul>
+        <div id="jobEmpty" class="job-empty">All clear: keep an eye out</div>
+        <div id="jobMore" class="job-more" hidden></div>
+      </div>
       <!-- What the whole crew needs to see: the tubes, the power budget,
            and the mechanic's supplies. -->
       <div id="shipPanel" aria-label="Ship systems">
