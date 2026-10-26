@@ -37,7 +37,7 @@ import { load, save } from './save.js';
 import { keyLabel, moveLabel, onSettingsChange, settings } from './settings.js';
 import { closeSettings, initSettings, isSettingsOpen, openSettings } from './settingsScreen.js';
 import { PALETTES, fillRoleKey, inkFor } from './roleLook.js';
-import { createRain } from './rain.js';
+import { FALL as RAIN_FALL, createRain } from './rain.js';
 import { buildPirates, lastPirateHit, resetPirateEffects, updatePirates } from './pirates.js';
 import { totalStars } from './log.js';
 import { showResult } from './results.js';
@@ -114,6 +114,10 @@ const helmGauge = document.getElementById('helmGauge');
 const helmShip = document.getElementById('helmShip');
 const helmRock = document.getElementById('helmRock');
 const resultBack = document.getElementById('resultBack');
+const resultAgain = document.getElementById('resultAgain');
+const endingScreen = document.getElementById('ending');
+const endingTitle = document.getElementById('endingTitle');
+const endingLine = document.getElementById('endingLine');
 const lockOverlay = document.getElementById('lockOverlay');
 const statusLine = document.getElementById('status');
 const banner = document.getElementById('banner');
@@ -122,7 +126,7 @@ const netNote = document.getElementById('netNote');
 const KIT_INTERACT = world.kit.userData.interact;
 
 // True from the moment you host or join until you are back at the menu;
-// the phase (gathering, lobby, takeoff, flight, result) says which screen
+// the phase (gathering, lobby, takeoff, flight, ending, result) says which screen
 // to show. inWorld: this browser has stepped onto the dock (it does not
 // on the crew screen, where there is nothing to walk around).
 let sessionActive = false;
@@ -649,10 +653,11 @@ function syncPhaseUi() {
         colorOf: (role) => ROLE_COLORS[role] ?? ROLE_COLORS.crew,
       });
     }
-    // Only the host sends the crew back down; joiners wait for them.
+    // Only the host sends the crew up again or back down; joiners wait.
     const waiting = sessionActive && !local.isHost;
     resultBack.disabled = waiting;
     resultBack.textContent = waiting ? 'Waiting for the host...' : 'Back to dock';
+    resultAgain.hidden = waiting || !sessionActive;
   }
 }
 
@@ -758,6 +763,11 @@ document.getElementById('resultBack').addEventListener('click', () => {
     player.controls.lock();
   }
 });
+// Straight back up: same crew, same uniforms, same route, still aboard.
+resultAgain.addEventListener('click', () => {
+  if (!sessionActive || !local.isHost) return;
+  if (game.flyAgain()) player.controls.lock();
+});
 
 // --- the loop --------------------------------------------------------
 
@@ -857,6 +867,7 @@ function hostTick(dt, now) {
   if (state.phase === 'lobby') game.tickLobby(dt);
   else if (state.phase === 'takeoff') game.tickTakeoff(dt);
   else if (state.phase === 'flight') game.tickFlight(dt, { bodies, inputs });
+  else if (state.phase === 'ending') game.tickEnding(dt);
 
   hostInteractions.update(dt, state.players, bodies, inputs, {
     canUse: game.canUse,
@@ -1004,12 +1015,105 @@ const JOBS = {
     `Pilot: hold A or D to steer round the rocks; let go and the wheel centres. Keep the gauge's marker out of the red band. When a storm wall comes, ring the bell (${keyLabel(settings.keys.bell)}) so the crew can brace.`,
 };
 
+// --- the end of a flight -------------------------------------------------
+
+// She goes down (or burns) for a few seconds, or comes in to the harbour,
+// before the result screen. The host's ending.t paces it, so the card,
+// the sounds, the dive and the crash land on every screen together.
+const ENDING_CUES = {
+  down: [
+    { at: 0, sound: 'engineer_steam_hiss', volume: 0.9 },
+    { at: 1.2, sound: 'engineer_lever_clunk', volume: 0.7 },
+    { at: RULES.sinkingSeconds - 0.4, sound: 'mechanic_cannonball_rack_clunk', volume: 1, jolt: true },
+  ],
+  burned: [
+    { at: 0, sound: 'mechanic_furnace_whoosh', volume: 1 },
+    { at: 1.2, sound: 'engineer_steam_hiss', volume: 0.7 },
+    { at: RULES.sinkingSeconds - 0.4, sound: 'mechanic_cannonball_rack_clunk', volume: 1, jolt: true },
+  ],
+  landed: [
+    { at: 0, sound: 'ui_ping_chime', volume: 0.8 },
+    { at: 0.6, sound: 'engineer_lever_clunk', volume: 0.9 }, // the hatch swings open
+    { at: 1.2, sound: 'dock_ship_bell_ding', volume: 0.6 },
+    { at: RULES.landingSeconds - 0.7, sound: 'dock_ship_bell_ding', volume: 0.9 }, // moored
+  ],
+}; // each list in order of time
+let endingCues = { flight: -1, next: 0 };
+let endJolt = 0; // when she hit, for the camera jolt
+
+function endingWords(end) {
+  if (end.kind === 'landed') {
+    return end.t < RULES.landingSeconds - 0.8
+      ? ['Harbour in sight!', 'Still in one piece. Bringing her in...']
+      : ['Moored!', 'Well flown, crew.'];
+  }
+  if (end.kind === 'burned') return ["She's burning!", 'Fire in every room. Hold on to something!'];
+  return ['Going down!', 'No height left. Hold on to something!'];
+}
+
+function updateEnding(now) {
+  const end = state.phase === 'ending' ? state.ending : null;
+  if (!end) return;
+  const [title, line] = endingWords(end);
+  if (endingTitle.textContent !== title) endingTitle.textContent = title;
+  if (endingLine.textContent !== line) endingLine.textContent = line;
+  endingScreen.classList.toggle('home', end.kind === 'landed');
+  endingScreen.classList.toggle('crash', now - endJolt < 450);
+
+  if (endingCues.flight !== state.flight) endingCues = { flight: state.flight, next: 0 };
+  const cues = ENDING_CUES[end.kind] ?? [];
+  while (endingCues.next < cues.length && end.t >= cues[endingCues.next].at) {
+    const cue = cues[endingCues.next++];
+    if (end.t - cue.at > 0.6) continue; // arrived late: not every sound at once
+    play(cue.sound, cue.volume);
+    if (cue.jolt) endJolt = now;
+  }
+}
+
+// Inside the hull the ship's own dive can't be seen (the camera rides with
+// her), so going down rolls and shakes the view itself, and the crash at
+// the end gives it a last jolt. None with camera motion off.
+let rolled = false;
+function rollView(t, now, sinking, motion) {
+  const crashed = (now - endJolt) / 1000;
+  const crash = crashed < 0.8 ? Math.sin(crashed * 45) * 0.05 * (1 - crashed / 0.8) : 0;
+  const roll = ((Math.sin(t * 1.6) * 0.07 + Math.sin(t * 27) * 0.012) * sinking + crash) * motion;
+  if (!roll && !rolled) return;
+  camera.rotation.z = roll;
+  rolled = roll !== 0;
+}
+
+// 0 .. 1 over the first second and a bit of going down (or burning).
+function sinkingShare() {
+  const end = state.phase === 'ending' ? state.ending : null;
+  if (!end || end.kind === 'landed') return 0;
+  return Math.min(1, end.t / 1.2);
+}
+
+// The sky closes in, dark (or fire-lit), as she goes down, and opens up
+// over the harbour; eased, and back to the storm for the next flight.
+const SKY = {
+  base: { color: new THREE.Color('#353a68'), near: 30, far: 160 },
+  down: { color: new THREE.Color('#1b1c30'), near: 14, far: 80 },
+  burned: { color: new THREE.Color('#4a272c'), near: 14, far: 80 },
+  landed: { color: new THREE.Color('#5d6599'), near: 40, far: 200 },
+};
+function updateSky(dt) {
+  const over = state.phase === 'ending' || state.phase === 'result';
+  const to = (sessionActive && over && SKY[state.result]) || SKY.base;
+  const k = Math.min(1, dt * 1.5);
+  scene.background.lerp(to.color, k);
+  scene.fog.color.copy(scene.background);
+  scene.fog.near += (to.near - scene.fog.near) * k;
+  scene.fog.far += (to.far - scene.fog.far) * k;
+}
+
 // The climb: what is happening, then your job, then a last call.
 let seenPhase = null;
 let seenHatch = false;
 function updateTakeoff() {
   const phase = state.phase;
-  if (phase === 'takeoff' && seenPhase === 'lobby') play('engineer_steam_hiss', 0.6); // moorings off
+  if (phase === 'takeoff' && (seenPhase === 'lobby' || seenPhase === 'result')) play('engineer_steam_hiss', 0.6); // moorings off
   seenPhase = phase;
   const shut = hatchShut(state);
   if (shut && !seenHatch && phase === 'takeoff') play('engineer_lever_clunk', 0.8); // the hatch slams
@@ -1154,6 +1258,7 @@ function updateStormAlert(now) {
     }
   }
   if (seenStormHits === null) seenStormHits = storm.hits;
+  if (storm.hits < seenStormHits) seenStormHits = storm.hits; // a fresh round, not a hit
   if (storm.hits !== seenStormHits) {
     seenStormHits = storm.hits;
     stormJolt = now;
@@ -1477,10 +1582,15 @@ function loop() {
   const rocking = (state.phase === 'result' ? 0 : climbed) * motion;
   const noseUp = state.phase === 'takeoff' ? Math.sin(climbed * Math.PI) * 0.05 * motion : 0;
   const lurch = state.phase === 'takeoff' ? Math.max(0, 1 - state.takeoff / 1.2) * Math.sin(t * 40) * 0.012 * motion : 0;
-  const jolted = (now - Math.max(stormJolt, lastPirateHit())) / 1000; // a storm wall, or a cannonball
+  const jolted = (now - Math.max(stormJolt, lastPirateHit(), endJolt)) / 1000; // a storm wall, a cannonball, the crash
   const jolt = jolted < 1.2 ? Math.sin(jolted * 30) * 0.05 * (1 - jolted / 1.2) * motion : 0;
-  ship.rotation.z = Math.sin(t * 0.8) * 0.06 * rocking + noseUp + lurch + jolt;
-  ship.rotation.x = Math.sin(t * 0.5) * 0.03 * rocking;
+  // The end of a flight: going down, she noses over and shudders and
+  // rolls; coming in to the harbour, she dips her bow to the dock.
+  const sinking = sinkingShare();
+  const dive = (-0.15 * sinking * sinking * (3 - 2 * sinking) + Math.sin(t * 31) * 0.018 * sinking) * motion;
+  const settle = state.phase === 'ending' && state.ending?.kind === 'landed' ? -Math.sin(climbed * Math.PI) * 0.04 * motion : 0;
+  ship.rotation.z = Math.sin(t * 0.8) * 0.06 * rocking + noseUp + lurch + jolt + dive + settle;
+  ship.rotation.x = Math.sin(t * 0.5) * 0.03 * rocking + Math.sin(t * 1.4) * 0.07 * sinking * motion;
 
   const dt = step(now);
 
@@ -1505,6 +1615,7 @@ function loop() {
     updateBanner();
     updateRoundHud(now);
     updateTakeoff();
+    updateEnding(now);
     updateSubtitles(state, now, settings.subtitles, subtitleLine);
     if (trainingActive()) updateTraining(now);
     updateJobs(now);
@@ -1527,9 +1638,13 @@ function loop() {
   });
 
   syncWorld(now, dt);
-  const airborne = state.phase === 'takeoff' || state.phase === 'flight';
+  if (sessionActive && inWorld) rollView(t, now, sinking, motion);
+  const airborne = state.phase === 'takeoff' || state.phase === 'flight' || state.phase === 'ending';
   // The ship sliding to starboard: the world, and its rain, slide to port.
-  rain.update(dt, settings.rain && sessionActive && inWorld && airborne, -game.sideSpeed() * DRIFT_METRES);
+  // Going down she falls faster than the rain, so it streams up past her.
+  const fall = RAIN_FALL - 70 * sinking;
+  rain.update(dt, settings.rain && sessionActive && inWorld && airborne, -game.sideSpeed() * DRIFT_METRES, fall);
+  updateSky(dt);
   // The Blender dock swaps in its own lockers once it loads: paint those too.
   if (world.lockers !== paintedLockers) paintRoles();
   countFrame(now);

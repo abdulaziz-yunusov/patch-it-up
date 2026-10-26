@@ -121,8 +121,88 @@ h2 {
   overflow-y: auto;
 }
 
+/* The buttons stay in reach however long the panel runs, side by side. */
+.result-panel .buttons {
+  position: sticky;
+  bottom: -32px;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  margin: 0 -32px -32px;
+  padding: 12px 32px 20px;
+  background: rgba(34, 40, 70, 0.97);
+  border-radius: 0 0 12px 12px;
+}
+
 .result-panel #resultDetail {
   margin: 4px 0 0;
+}
+
+/* Why she went down: one sentence, one tip, and the drains as bars. */
+.result-why {
+  margin: 12px 0 4px;
+  padding: 12px 14px;
+  text-align: left;
+  background: #1b2039;
+  border-left: 5px solid #e2574c;
+  border-radius: 12px;
+}
+
+.result-why.low {
+  border-left-color: #ffd84d;
+}
+
+.result-why .cause {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  color: #ffd58a;
+}
+
+.result-why .tip {
+  margin: 6px 0 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #c9cff0;
+}
+
+.breakdown {
+  display: grid;
+  gap: 5px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.breakdown li {
+  display: grid;
+  grid-template-columns: minmax(0, 11em) 1fr 3em;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.breakdown .bar {
+  height: 10px;
+  background: #2d3459;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.breakdown .bar span {
+  display: block;
+  height: 100%;
+  background: #e2574c;
+  border-radius: 5px;
+}
+
+.breakdown li:first-child .bar span {
+  background: #ff8f3a;
+}
+
+.breakdown .share {
+  text-align: right;
+  color: #c9cff0;
 }
 
 .result-stars {
@@ -337,7 +417,9 @@ button.big {
 }
 
 #lobby,
-#flight {
+#takeoff,
+#flight,
+#ending {
   pointer-events: none;
 }
 
@@ -368,6 +450,86 @@ button.big {
   background: rgba(20, 24, 48, 0.7);
   border: 3px solid #3b2516;
   border-radius: 12px;
+}
+
+/* The last seconds of a flight: red going down, gold coming home. */
+#endingCard {
+  position: absolute;
+  left: 50%;
+  top: 14%;
+  transform: translateX(-50%);
+  width: min(86vw, 460px);
+  padding: 16px 22px;
+  text-align: center;
+  background: rgba(48, 16, 20, 0.72);
+  border: 3px solid #e2574c;
+  border-radius: 12px;
+  animation: ending-in 0.35s ease-out;
+}
+
+#ending.home #endingCard {
+  background: rgba(20, 24, 48, 0.7);
+  border-color: #ffd84d;
+}
+
+/* The edges of the screen: a red pulse going down, warm light coming
+   home, and a white flash when she hits. */
+#ending::before,
+#ending::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+#ending::before {
+  background: radial-gradient(ellipse at center, transparent 40%, rgba(140, 12, 12, 0.6) 100%);
+  animation: ending-pulse 0.7s ease-in-out infinite alternate;
+}
+
+#ending.home::before {
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(255, 196, 90, 0.28) 100%);
+  animation: none;
+}
+
+#ending::after {
+  background: #fff4dc;
+  opacity: 0;
+  transition: opacity 0.4s ease-out;
+}
+
+#ending.crash::after {
+  opacity: 0.55;
+  transition: none;
+}
+
+@keyframes ending-pulse {
+  from {
+    opacity: 0.55;
+  }
+}
+
+#endingTitle {
+  font-size: calc(34px * var(--hud-scale, 1));
+  font-weight: 800;
+  color: #ffb0a6;
+}
+
+#ending.home #endingTitle {
+  color: #ffd84d;
+}
+
+#endingLine {
+  margin-top: 6px;
+  font-size: calc(17px * var(--hud-scale, 1));
+  font-weight: 700;
+}
+
+@keyframes ending-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.9);
+  }
 }
 
 #takeoffTitle {

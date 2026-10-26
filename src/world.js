@@ -258,17 +258,29 @@ export function buildShip() {
   };
 }
 
+const smooth = (t) => t * t * (3 - 2 * t);
+
+// Coming in to the harbour at the end of a good flight: the climb, run
+// backwards, while the dock rises to meet her.
+const landing = (state) => state.phase === 'ending' && state.ending?.kind === 'landed';
+const moored = (state) => state.phase === 'result' && state.result === 'landed';
+
 // How far through the climb away from the dock, 0 .. 1, eased so the
 // ship lurches free, picks up speed, then levels off at cruising height.
 export function takeoffProgress(state) {
+  if (landing(state)) return 1 - smooth(Math.min(1, state.ending.t / RULES.landingSeconds));
+  if (moored(state)) return 0;
   if (state.phase !== 'takeoff') return state.phase === 'lobby' ? 0 : 1;
-  const t = Math.min(1, state.takeoff / RULES.takeoffSeconds);
-  return t * t * (3 - 2 * t);
+  return smooth(Math.min(1, state.takeoff / RULES.takeoffSeconds));
 }
 
-// The hatch slams this long before the round starts.
+// The hatch slams this long before the round starts, and swings open
+// again this far into a landing, so the crew can watch the dock come up.
 const HATCH_SHUTS_BEFORE = 1.5;
+const HATCH_OPENS_AFTER = 0.6;
 export function hatchShut(state) {
+  if (landing(state)) return state.ending.t < HATCH_OPENS_AFTER;
+  if (moored(state)) return false;
   if (state.phase !== 'takeoff') return state.phase !== 'lobby';
   return state.takeoff >= RULES.takeoffSeconds - HATCH_SHUTS_BEFORE;
 }
@@ -346,9 +358,9 @@ function buildStormWall(ship) {
 // Every frame: fires flicker and offer "Douse"; the storm wall rolls in.
 export function updateHazards(world, state, now) {
   for (const [room, fire] of Object.entries(world.fires)) {
-    const burning = state.phase === 'flight' && !!state.fires?.[room];
+    const burning = (state.phase === 'flight' || state.phase === 'ending') && !!state.fires?.[room];
     fire.group.visible = burning;
-    fire.target.userData.interact = burning ? fire.target.userData.fireInteract : null;
+    fire.target.userData.interact = burning && state.phase === 'flight' ? fire.target.userData.fireInteract : null;
     if (!burning) {
       fire.light.intensity = 0;
       continue;
@@ -445,11 +457,11 @@ export function applyState(world, state, localAtWheel = false, shownSteering = n
   // dock falling away beneath it. It vanishes once lost in the clouds.
   const atDock = state.phase === 'lobby';
   const climbed = takeoffProgress(state);
-  world.dock.visible = atDock || state.phase === 'takeoff';
+  world.dock.visible = atDock || state.phase === 'takeoff' || landing(state) || moored(state);
   world.dock.position.set(-climbed * CLIMB.slide, -climbed * CLIMB.drop, -climbed * CLIMB.slide * 0.5);
   // The cargo door stays open on the way up so the crew can watch the
   // dock drop away (the hatch's collider already bars it), then slams.
-  world.hatch.visible = !atDock && !(state.phase === 'takeoff' && !hatchShut(state));
+  world.hatch.visible = hatchShut(state);
 
   // A taken locker goes dark and wears its owner's name.
   for (const locker of world.lockers) {

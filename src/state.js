@@ -101,6 +101,8 @@ export const RULES = {
   weakSignalMs: 1000, // silence this long shows them as lagging on the crew screen
   countdown: 5, // seconds on the deck before the ship casts off
   takeoffSeconds: 7, // the climb away from the dock, before the round starts
+  sinkingSeconds: 3, // going down (or burning) before the result screen
+  landingSeconds: 4, // coming in to the harbour before the result screen
   correction: 0.25, // how hard your own sphere is pulled to the host's answer
 
   // The dock's toys.
@@ -159,7 +161,8 @@ export const KIT_HOME = { x: -6.6, y: 0.15, z: 1.6 };
 
 export const state = {
   // 'gathering' on the host's crew screen, 'lobby' at the dock, 'takeoff'
-  // climbing away, 'flight' in the air, 'result' after
+  // climbing away, 'flight' in the air, 'ending' while she goes down or
+  // comes in to the harbour, 'result' after
   phase: 'lobby',
   takeoff: 0, // seconds into the climb, while phase is 'takeoff'
   countdown: null, // seconds left once the whole crew is aboard
@@ -191,7 +194,8 @@ export const state = {
   rock: { lane: 0, distance: 0, active: false },
   altitude: RULES.altitudeStart,
   timeLeft: RULES.roundSeconds,
-  result: null, // 'landed' or 'down', once the round ends
+  result: null, // 'landed', 'down' or 'burned', once the round ends
+  ending: null, // { kind, t } while she goes down or comes in, before the result screen
   kit: { heldBy: null, planks: RULES.kitPlanks, ...KIT_HOME },
 
   // The dock's toys, all shared so everyone sees the same thing.
@@ -235,7 +239,20 @@ export function newRaid() {
 // about unbraced; looted: raids that got away with the goods; raids: raids
 // sighted; rockHits: rocks through the hull.
 export function newLog() {
-  return { spread: 0, thrown: 0, looted: 0, raids: 0, rockHits: 0 };
+  return {
+    spread: 0,
+    thrown: 0,
+    looted: 0,
+    raids: 0,
+    rockHits: 0,
+    // Where the altitude went (per cent, summed over the flight), for the
+    // result screen's "why": holes by room, the steady sink, grapples,
+    // storm walls; and what Lift gave back, and how long the furnace ran cold.
+    lost: { holes: { engine: 0, power: 0, helm: 0 }, sink: 0, hooks: 0, storm: 0, lift: 0 },
+    torn: { engine: 0, power: 0, helm: 0 }, // holes opened in each room
+    cold: 0,
+    firstFire: '', // the room the first fire started in
+  };
 }
 
 // Who this browser is. Never sent anywhere.
@@ -294,6 +311,7 @@ export function snapshot() {
     altitude: state.altitude,
     timeLeft: state.timeLeft,
     result: state.result,
+    ending: state.ending,
     kit: state.kit,
     route: state.route,
     bell: state.bell,
@@ -339,6 +357,7 @@ export function applySnapshot(s) {
   state.altitude = s.altitude ?? state.altitude;
   state.timeLeft = s.timeLeft ?? state.timeLeft;
   state.result = s.result ?? null;
+  state.ending = s.ending ?? null;
   state.kit = s.kit ?? state.kit;
   state.route = s.route ?? state.route;
   state.bell = s.bell ?? state.bell;
