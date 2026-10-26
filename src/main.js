@@ -45,6 +45,7 @@ import { resetSubtitles, updateSubtitles } from './subtitles.js';
 import { endVoice, handleSignal, hostLink, hostUnlink, initVoice, micState, startMic, stopMic, voiceStatus } from './voice.js';
 import { hasVoice, isSpeaking, outputRoute, placeVoices } from './audio.js';
 import { initVoiceUi, updateVoiceUi } from './voiceUi.js';
+import { TRAINING_START, skipLesson, startTraining, stopTraining, trainingActive, trainingFinished, updateTraining } from './training.js';
 
 // Graphics quality is the resolution the scene is drawn at: below the
 // screen's own on Low, up to a sharp screen's full detail on High.
@@ -323,7 +324,9 @@ initVoiceUi();
 // the Join screen (its Voice check), and in the settings' Audio tab.
 // Back on the main menu it goes off, and the browser's recording dot with it.
 function syncMic() {
-  if (sessionActive || opening || currentScreen() === 'join' || isSettingsOpen()) startMic();
+  // Training is solo: nobody to talk to, so the mic stays off (unless the
+  // settings' Audio tab is testing it).
+  if ((sessionActive && !trainingActive()) || opening || currentScreen() === 'join' || isSettingsOpen()) startMic();
   else stopMic();
 }
 
@@ -336,7 +339,56 @@ initMenu({
     startMic();
   },
   onSettings: () => openSettings(syncMic),
+  onTraining: () => beginTraining(),
 });
+
+// Training: a solo flight on this computer alone (no room is opened), the
+// game in its gentle mode, and training.js leading the way. It reuses the
+// host's whole machinery: this browser simulates the ship and plays it.
+function beginTraining() {
+  if (opening || sessionActive) return;
+  note('');
+  local.name = playerName();
+  local.isHost = true;
+  local.id = 'host';
+  local.code = '';
+  state.players = {};
+  game.newSession();
+  bodies.clear();
+  inputs.clear();
+  forgetSeats();
+  crew.delay = 0;
+  state.code = '';
+  state.route = 0; // Calm Cliffs
+
+  const me = newPlayer(local.id, local.name, 0);
+  Object.assign(me, { x: TRAINING_START.x, y: TRAINING_START.y, z: TRAINING_START.z, yaw: TRAINING_START.yaw, role: 'mechanic' });
+  state.players[me.id] = me;
+  bodies.set(me.id, player.body);
+  inputs.set(me.id, { ...emptyInput(), yaw: me.yaw });
+
+  game.startRound();
+  state.flight = 1;
+  state.phase = 'flight';
+  game.setTraining(true);
+  startTraining({
+    world,
+    // The last lesson done: the mouse back for the buttons.
+    finish: () => {
+      lockOverlay.hidden = true;
+      if (player.controls.isLocked) player.controls.unlock();
+    },
+  });
+  startSession();
+  showTrainingButtons();
+}
+
+// The pause menu's buttons say what they do in training.
+function showTrainingButtons() {
+  const training = trainingActive();
+  document.getElementById('skipLesson').hidden = !training;
+  document.getElementById('leaveShip').textContent = training ? 'Leave training' : 'Leave ship';
+}
 
 initJoin({
   onJoin: (code) => joinGame(code),
@@ -592,6 +644,10 @@ function syncPhaseUi() {
 // keepSeat: the line broke rather than the player leaving, so joining the
 // same code again (while the host still holds the seat) gets it back.
 function leaveShip(message = '', { keepSeat = false } = {}) {
+  if (trainingActive()) {
+    stopTraining();
+    game.setTraining(false);
+  }
   sessionActive = false;
   inWorld = false;
   joinAttempt += 1; // a reconnect in progress stops here
@@ -626,6 +682,7 @@ function leaveShip(message = '', { keepSeat = false } = {}) {
   refreshNameChip();
   note(message);
   showScreen('menu');
+  showTrainingButtons();
   syncMic();
 }
 
@@ -655,7 +712,18 @@ addEventListener('pagehide', () => {
 
 player.controls.addEventListener('lock', () => (lockOverlay.hidden = true));
 player.controls.addEventListener('unlock', () => {
-  if (sessionActive && state.phase !== 'result') lockOverlay.hidden = false;
+  if (sessionActive && state.phase !== 'result' && !trainingFinished()) lockOverlay.hidden = false;
+});
+document.getElementById('skipLesson').addEventListener('click', () => {
+  skipLesson();
+  // Back into the game, unless that was the last lesson: the finish panel
+  // needs the mouse for its buttons.
+  if (!trainingFinished()) player.controls.lock();
+});
+document.getElementById('trainingMenu').addEventListener('click', () => leaveShip());
+document.getElementById('trainingHost').addEventListener('click', () => {
+  leaveShip();
+  hostGame();
 });
 document.getElementById('clickToPlay').addEventListener('click', () => player.controls.lock());
 // Settings mid-game: the game goes on underneath (it is online), and
@@ -819,7 +887,7 @@ function returnToDock() {
 function updateRoundHud(now) {
   const minutes = Math.floor(state.timeLeft / 60);
   const seconds = Math.floor(state.timeLeft % 60);
-  timerText.textContent = `${minutes}:${String(seconds).padStart(2, '0')}`;
+  timerText.textContent = game.inTraining() ? 'Training' : `${minutes}:${String(seconds).padStart(2, '0')}`;
   const altitude = Math.max(0, Math.round(state.altitude));
   altitudeFill.style.width = `${altitude}%`;
   altitudeFill.classList.toggle('low', altitude <= 30);
@@ -1218,7 +1286,7 @@ function updateStatus() {
     .join(', ');
   // Power and the rudder only mean something once the ship is flying.
   const parts = [
-    `Room ${local.code}${local.isHost ? ' (host)' : ''}`,
+    game.inTraining() ? 'Training (solo, offline)' : `Room ${local.code}${local.isHost ? ' (host)' : ''}`,
     state.phase === 'flight'
       ? `${role} · holding ${holding}`
       : `${role} · ${ROUTES[state.route].name}`,
@@ -1418,6 +1486,7 @@ function loop() {
     updateRoundHud(now);
     updateTakeoff();
     updateSubtitles(state, now, settings.subtitles, subtitleLine);
+    if (trainingActive()) updateTraining(now);
     updateCallout(now);
     updateStormAlert(now);
     updateRaidAlert();

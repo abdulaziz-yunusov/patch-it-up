@@ -12,11 +12,13 @@ export function playerName() {
 export function refreshNameChip() {
   document.getElementById('nameShown').textContent = playerName();
   document.getElementById('playerName').value = load().name ?? '';
+  // Training finished once: a tick on its button (it can still be replayed).
+  document.getElementById('trainingTag').hidden = !load().trainingDone;
 }
 
 // onHost() opens a room, onJoin() opens the Join a game screen,
-// onSettings() opens the settings.
-export function initMenu({ onHost, onJoin, onSettings }) {
+// onSettings() opens the settings, onTraining() starts a training flight.
+export function initMenu({ onHost, onJoin, onSettings, onTraining }) {
   const nameInput = document.getElementById('playerName');
   const menuNote = document.getElementById('menuNote');
 
@@ -62,9 +64,8 @@ export function initMenu({ onHost, onJoin, onSettings }) {
     onSettings();
   });
 
-  // On the page, not in an alert box: a desktop build has no browser dialogs.
   document.getElementById('training').addEventListener('click', () => {
-    menuNote.textContent = 'Training is coming soon';
-    menuNote.hidden = false;
+    menuNote.hidden = true;
+    onTraining();
   });
 }
