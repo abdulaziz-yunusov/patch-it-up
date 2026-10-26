@@ -39,12 +39,16 @@ export function createRain(ship) {
   }
 
   return {
-    update(dt, on) {
+    // side: metres per second the world slides past sideways as the ship
+    // drifts (main.js), so steering shows even with no rock in sight.
+    update(dt, on, side = 0) {
       lines.visible = on;
       if (!on) return;
       drops.forEach((drop, i) => {
         drop.y -= FALL * dt;
         drop.x += WIND * dt;
+        drop.z += side * dt;
+        if (Math.abs(drop.z) > AREA.z) drop.z -= Math.sign(drop.z) * 2 * AREA.z;
         if (drop.y < AREA.bottom || drop.x > AREA.x) place(drop, false);
         // Wind can push a drop over the deck: start it again elsewhere.
         if (Math.abs(drop.x) < HULL.x && Math.abs(drop.z) < HULL.z) place(drop, false);

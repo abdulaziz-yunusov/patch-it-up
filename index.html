@@ -299,6 +299,16 @@
         <div id="altitudeText">100%</div>
         <div id="furnaceBar"><div id="furnaceFill"></div></div>
         <div id="furnaceText">Furnace</div>
+        <!-- The pilot's helm gauge, while they hold the wheel: where the ship
+             sits between the edges, and where the next rock would hit. -->
+        <div id="helmGauge" aria-label="Helm position" hidden>
+          <span class="helm-end">Port</span>
+          <div class="helm-track">
+            <div id="helmRock" hidden></div>
+            <div id="helmShip"></div>
+          </div>
+          <span class="helm-end">Starboard</span>
+        </div>
       </div>
       <div id="flash"></div>
       <!-- What the whole crew needs to see: the tubes, the power budget,

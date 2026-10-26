@@ -92,7 +92,8 @@ export async function loadPowerModel(world) {
 
 // --- every frame ---------------------------------------------------------
 
-const seen = { steam: null };
+const seen = { steam: null, lostUnit: null };
+const lostFlash = [0, 0, 0]; // when each lever stops flashing red
 let steamAt = -Infinity;
 const STEAM_MS = 1600;
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -133,6 +134,19 @@ export function updatePower(world, state, { now, dt }) {
   if (room.warning) room.warning.material.emissiveIntensity = blink ? 3 : 0.15;
   if (room.warningLight) room.warningLight.intensity = blink ? 1.5 : 0;
 
+  // The furnace cooled and took a unit out of a tube: its lever flashes red
+  // for a moment, so the engineer sees where the power went.
+  const lost = state.lostUnit ?? { count: 0, tube: -1 };
+  if (lost.count !== seen.lostUnit) {
+    if (seen.lostUnit !== null && lost.tube >= 0) lostFlash[lost.tube] = now + 1200;
+    seen.lostUnit = lost.count;
+  }
+  (world.levers ?? []).forEach((lever, i) => {
+    const on = lostFlash[i] > now && Math.floor(now / 150) % 2 === 0;
+    lever.material.emissive.set(on ? '#ff3b2e' : '#000000');
+    lever.material.emissiveIntensity = on ? 1.5 : 0;
+  });
+
   // Steam: a shared counter, so everyone sees and hears the same puff.
   if (state.steam !== seen.steam) {
     if (seen.steam !== null) {
@@ -155,4 +169,6 @@ export function updatePower(world, state, { now, dt }) {
 
 export function resetPowerEffects() {
   seen.steam = null;
+  seen.lostUnit = null;
+  lostFlash.fill(0);
 }

@@ -12,12 +12,14 @@ const DOT = '·';
 const _eye = new THREE.Vector3();
 const _aim = new THREE.Vector3();
 
-// The nearest thing along the ray that carries userData.interact.
+// The nearest thing along the ray that carries userData.interact, unless
+// a wall comes first: nothing is used through a bulkhead or the hull.
 function firstInteractive(ship, raycaster) {
   for (const hit of raycaster.intersectObjects(ship.children, true)) {
     for (let node = hit.object; node && node !== ship; node = node.parent) {
       if (node.userData.interact) return node;
     }
+    if (hit.object.userData.blocksInteract) return null;
   }
   return null;
 }
