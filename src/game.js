@@ -32,7 +32,7 @@ const handsFull = (player) => holdsKit(player) || player.fuse || player.bucket;
 // fire can spread to (the rooms stand in a row: engine, power, helm).
 const ROOMS = ['engine', 'power', 'helm'];
 export const ROOM_LABEL = { engine: 'engine room', power: 'power room', helm: 'helm' };
-const STATION_ROOM = { stoke: 'engine', power: 'power', steam: 'power', wheel: 'helm' };
+const STATION_ROOM = { stoke: 'engine', power: 'power', powerDown: 'power', steam: 'power', wheel: 'helm' };
 const NEXT_ROOMS = { engine: ['power'], power: ['engine', 'helm'], helm: ['power'] };
 
 // The rooms stand in a row along x, with bulkheads at x = -4 and 4.
