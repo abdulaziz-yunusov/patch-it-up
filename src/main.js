@@ -625,6 +625,11 @@ function syncPhaseUi() {
   if (!gathering && !inWorld) enterWorld();
   const playing = state.phase !== 'result' && !gathering;
   playUi.hidden = !playing;
+  // The game on screen with the mouse free: "Click to play" must be there
+  // to take it back. The result screen frees the mouse and hides the
+  // overlay, so without this a crew sent back to the dock after a flight
+  // could not move at all (and had nothing to click).
+  if (playing && !player.controls.isLocked && !trainingFinished()) lockOverlay.hidden = false;
   if (state.phase === 'result') {
     if (player.controls.isLocked) player.controls.unlock();
     if (shownResult !== state.flight) {
@@ -735,8 +740,12 @@ document.getElementById('resultBack').addEventListener('click', () => {
     showScreen('menu');
     return;
   }
-  // Only the host decides; a joiner's button is disabled until then.
-  if (local.isHost) returnToDock();
+  // Only the host decides; a joiner's button is disabled until then. The
+  // click also takes the mouse back, so the host is straight back in play.
+  if (local.isHost) {
+    returnToDock();
+    player.controls.lock();
+  }
 });
 
 // --- the loop --------------------------------------------------------
