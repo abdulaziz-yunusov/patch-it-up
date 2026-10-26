@@ -115,7 +115,7 @@ const LESSONS = [
       state.tubeHeat = [0, 0, 0];
     },
     text: () =>
-      `Walk into the power room. Each brass lever puts a spare unit into its tube: Engines steer, Shields stop rocks, Lift holds the ship up. Pull the Lift lever (the right one, ${key('interact')}) until Lift has 3 units.`,
+      `Walk into the power room. Each brass lever puts a spare unit into its tube: Engines steer, Shields stop rocks, Lift holds the ship up. Pull the Lift lever (the left one, under the LIFT sign, ${key('interact')}) until Lift has 3 units.`,
     target: () => lever(2),
     done: () => state.power[2] >= 3,
   },
@@ -128,7 +128,7 @@ const LESSONS = [
       }
       t.from = state.power[0];
     },
-    text: () => `The red handle under each lever takes a unit back out, into the spares. Take one unit out of Engines (the left tube).`,
+    text: () => `The red handle under each lever takes a unit back out, into the spares. Take one unit out of Engines (the right tube, under the ENGINES sign).`,
     target: () => downHandle(0),
     done: (t) => state.power[0] < t.from,
   },

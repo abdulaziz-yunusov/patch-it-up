@@ -503,6 +503,7 @@ function buildStations(ship, colliders, solid, box, metal) {
   const tubes = [];
   const levers = [];
   const leverDowns = [];
+  const tubeSigns = [];
   TUBE.xs.forEach((x, i) => {
     // Unit-height geometry, scaled by applyState as power moves.
     // Its own material, so it can glow as it overheats.
@@ -538,7 +539,21 @@ function buildStations(ship, colliders, solid, box, metal) {
     down.userData.interact = { label: 'Power down', role: 'engineer', action: 'powerDown', index: i };
     ship.add(down);
     leverDowns.push(down);
+
+    // Its name on a sign above it, in front of the cap and tipped down
+    // toward whoever stands at the levers, striped in the tube's colour
+    // from the ship panel. (The model's own plaques sit behind the caps.)
+    const sign = createLabel(0.66, 0.2, 264, 80);
+    sign.position.set(x, 2.45, 2.0);
+    sign.rotation.set(-0.22, Math.PI, 0); // facing the room, a little downward
+    sign.raycast = () => {}; // never in the way of a look-ray
+    drawTubeSign(sign, TUBE_SIGNS[i]);
+    ship.add(sign);
+    tubeSigns.push(sign);
   });
+  // The signs' lettering is the game's own font: draw them again once it
+  // has loaded, in case they were first drawn in the fallback.
+  document.fonts?.ready.then(() => tubeSigns.forEach((sign, i) => drawTubeSign(sign, TUBE_SIGNS[i], true)));
 
   // Helm: the wheel on its mount, spokes so you can see it turn. It sits
   // low, below the pilot's sightline, or it hides the one rock that is
@@ -691,6 +706,36 @@ export function createLabel(width, height, pixelWidth = 256, pixelHeight = 64) {
   mesh.userData.texture = texture;
   mesh.userData.text = null;
   return mesh;
+}
+
+// The power tubes' names and colours (the ship panel's pips use the same).
+const TUBE_SIGNS = [
+  { text: 'ENGINES', color: '#ff8f3a' },
+  { text: 'SHIELDS', color: '#7fd4ff' },
+  { text: 'LIFT', color: '#ffd84d' },
+];
+
+// A tube's sign: its name on the dark board, a stripe of its colour below.
+function drawTubeSign(mesh, { text, color }, again = false) {
+  if (mesh.userData.text === text && !again) return;
+  mesh.userData.text = text;
+  const canvas = mesh.userData.canvas;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  const h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = '#3b2516'; // the brown edge of the HUD's panels
+  ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = 'rgb(27, 32, 57)';
+  ctx.fillRect(5, 5, w - 10, h - 10);
+  ctx.fillStyle = color;
+  ctx.fillRect(5, h - 19, w - 10, 14);
+  ctx.fillStyle = '#fff4dc';
+  ctx.font = `${Math.round(h * 0.5)}px 'Lilita One', 'Arial Black', sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, w / 2, (h - 14) / 2 + 1, w - 24);
+  mesh.userData.texture.needsUpdate = true;
 }
 
 // Only repaint when the words change: this runs every frame.
