@@ -533,11 +533,15 @@ export function pickRole(player, role) {
   return true;
 }
 
+// Inside the hull: within its walls, above the dock, and under its roof.
+// Someone standing on the roof (flown up from the dock) is not aboard, or
+// the ship would cast off with them stuck outside for the whole flight.
 export function aboard(player) {
   return (
     Math.abs(player.x) < SHIP.length / 2 - 0.3 &&
     Math.abs(player.z) < SHIP.width / 2 - 0.1 &&
-    player.y > -0.2
+    player.y > -0.2 &&
+    player.y < SHIP.wallHeight
   );
 }
 
@@ -954,6 +958,10 @@ export function backToDock() {
   startRound();
   state.phase = 'lobby';
   state.countdown = null;
+  // Short-handed was the word for that flight: the next one waits for a
+  // full crew again until the host rings the dock bell, so a friend on
+  // their way is not left behind.
+  state.shortHanded = false;
   state.kit.heldBy = null;
   state.kit.x = KIT_HOME.x;
   state.kit.y = KIT_HOME.y;
@@ -1013,15 +1021,43 @@ export function tickTakeoff(dt) {
   }
 }
 
+// Hands off everything: the wheel, the kit, a fuse, a bucket. For a player
+// whose line has dropped (their seat is held, but the crew cannot wait 30 s
+// for the wheel or the kit) and for one who has gone for good.
+export function letGo(player, body) {
+  if (player.atWheel) {
+    player.atWheel = false;
+    state.steering = 0; // the wheel spins back to centre
+  }
+  if (body) body.atWheel = false;
+  if (player.fuse) state.fuses += 1; // their fuse goes back in the crate
+  player.fuse = false;
+  player.bucket = false; // the water goes on the floor
+  if (state.kit.heldBy === player.id) {
+    if (body) dropKit(player, body, player.yaw ?? 0); // at their feet, for whoever needs it
+    else state.kit.heldBy = null;
+  }
+}
+
 // Someone's browser closed: free what they were holding.
 export function removePlayer(id, body) {
   const player = state.players[id];
   if (!player) return;
-  if (player.atWheel) state.steering = 0; // nobody left holding the wheel
-  if (player.fuse) state.fuses += 1; // their fuse goes back in the crate
-  player.fuse = false;
-  player.bucket = false;
-  if (state.kit.heldBy === id && body) dropKit(player, body, player.yaw);
-  else if (state.kit.heldBy === id) state.kit.heldBy = null;
+  letGo(player, body);
   delete state.players[id];
+}
+
+// A new session (a room opened, or back at the menu): nothing of the last
+// one carries over. The hull is sound, no fire, no pirates, the kit on its
+// rack, no flights flown, and the ship waits for a full crew.
+export function newSession() {
+  startRound();
+  state.phase = 'lobby';
+  state.countdown = null;
+  state.takeoff = 0;
+  state.result = null;
+  state.flight = 0;
+  state.shortHanded = false;
+  state.kit = { heldBy: null, planks: RULES.kitPlanks, ...KIT_HOME };
+  state.props = {};
 }

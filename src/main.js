@@ -265,7 +265,9 @@ function holdSeat(id) {
   seated.signal = 'lost';
   lostAt.set(id, performance.now());
   inputs.set(id, { ...emptyInput(), yaw: seated.yaw });
-  if (seated.atWheel) state.steering = 0; // nobody's hands on it: the wheel spins back to centre
+  // Their hands come off the wheel and they put down what they carry, so
+  // the rest of the crew can steer and patch while the seat waits for them.
+  game.letGo(seated, bodies.get(id));
   hostInteractions.holds.delete(id);
   hostUnlink(id);
   net.release(id);
@@ -372,6 +374,7 @@ async function openRoom() {
   local.isHost = true;
   local.id = 'host';
   state.players = {};
+  game.newSession(); // nothing of an earlier session (ours or another host's) carries over
   bodies.clear();
   inputs.clear();
   forgetSeats();
@@ -606,9 +609,7 @@ function leaveShip(message = '', { keepSeat = false } = {}) {
   inputs.clear();
   forgetSeats();
   crew.sync({}, local.id);
-  state.kit.heldBy = null;
-  state.phase = 'lobby';
-  state.countdown = null;
+  game.newSession(); // the ship behind the menu: no holes or fires left from that flight
   playUi.hidden = true;
   player.toggleView(false); // back to first person, own character hidden
   player.exit(scene);
