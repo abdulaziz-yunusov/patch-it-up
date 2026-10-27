@@ -789,7 +789,7 @@ export function buildHarbour(world, scene, model) {
   // Everything that never moves becomes a few big meshes, one per
   // material: hundreds of flowers, leaves and beams cost a few draws.
   const live = booths.flatMap((b) => {
-    const parts = [b.prop];
+    const parts = [b.prop, ...b.doors.map((d) => d.hinge)];
     b.prop.parent.traverse((o) => o.isMesh && (Object.values(b.tone).includes(o.material) || o.material === b.lamp.material) && parts.push(o));
     return parts;
   });
@@ -1055,13 +1055,24 @@ function dressLockers(world, root) {
     // double doors with raised panels and brass knobs
     const doorH = s.y * 0.6; // room above for the name board, under the badge
     const doorY = DOCK.top + 0.14 + doorH / 2 + 0.04;
+    // Each door hangs on a hinge at its outer edge, so it can swing open.
+    const doors = [];
     for (const side of [-1, 1]) {
-      const dz = c.z + side * (width * 0.235);
-      add(mesh(new RoundedBoxGeometry(0.05, doorH, width * 0.44, 2, 0.015), tone.door, front - 0.02, doorY, dz));
-      for (const py of [0.24, -0.2]) {
-        add(mesh(new RoundedBoxGeometry(0.03, doorH * 0.32, width * 0.3, 2, 0.01), tone.panel, front - 0.05, doorY + py * doorH, dz));
-      }
-      add(mesh(new THREE.SphereGeometry(0.04, 10, 8), paint('#e2b84a', { rough: 0.3 }), front - 0.08, doorY, c.z + side * 0.07));
+      const hingeZ = c.z + side * (width * 0.455);
+      const hinge = new THREE.Group();
+      hinge.position.set(front - 0.02, doorY, hingeZ);
+      const dz = side * (width * 0.235) - side * (width * 0.455); // door centre, from the hinge
+      const part = (m) => {
+        m.userData.shadowSet = true;
+        hinge.add(m);
+      };
+      part(mesh(new RoundedBoxGeometry(0.05, doorH, width * 0.44, 2, 0.015), tone.door, 0, 0, dz));
+      for (const py of [0.24, -0.2]) part(mesh(new RoundedBoxGeometry(0.03, doorH * 0.32, width * 0.3, 2, 0.01), tone.panel, -0.03, py * doorH, dz));
+      part(mesh(new THREE.SphereGeometry(0.04, 10, 8), paint('#e2b84a', { rough: 0.3 }), -0.06, 0, side * 0.07 - side * (width * 0.455)));
+      // dark inside, seen only while the doors stand open
+      g.add(mesh(new THREE.BoxGeometry(0.02, doorH * 0.96, width * 0.44), paint('#2a1c14'), front - 0.003, doorY, c.z + side * (width * 0.235), { shadow: false }));
+      g.add(hinge);
+      doors.push({ hinge, side });
     }
     // trim round the front
     const trimT = 0.06;
@@ -1110,7 +1121,20 @@ function dressLockers(world, root) {
     g.add(prop);
 
     root.add(g);
-    booths.push({ locker, tone, lamp, prop });
+    booths.push({
+      locker,
+      tone,
+      lamp,
+      prop,
+      doors,
+      mouth: new THREE.Vector3(front - 0.15, doorY + 0.2, c.z), // where the confetti comes out
+      color: role,
+      root: g,
+      shade: null, // 0 free .. 1 taken, eased; null until first seen
+      taken: null,
+      since: -1, // when it was last taken (or freed)
+      burst: null,
+    });
   }
   return booths;
 }
@@ -1118,23 +1142,133 @@ function dressLockers(world, root) {
 const _base = new THREE.Color();
 const _white = new THREE.Color('#ffffff');
 const _grey = new THREE.Color('#7a7a88');
+const _tmp = new THREE.Color();
 // Every frame: the booth's coloured parts follow its locker's colour (free,
 // taken, or the colour-blind palette); its lamp is lit while it is free.
-function updateBooths(booths, t) {
+// --- the take-a-uniform animation ------------------------------------------------
+//
+// When a uniform is taken, its booth plays a little show, the same on every
+// screen (each works it out from the uniform being taken):
+//   0.00 s  the doors swing open, the roof prop hops and whirls
+//   0.10 s  a burst of confetti out of the doorway, with a chime
+//   0.75 s  the doors swing shut, with a clunk
+//   0.90 s  the booth fades to its taken grey, the lamps go out
+// Put back, the booth brightens again with a little hop of its prop.
+const OPEN = 0.25;
+const SHUT_AT = 0.75;
+const SHUT = 0.25;
+const FADE_AT = 0.9;
+const FADE = 0.6;
+const ease = (x) => 1 - (1 - x) ** 3;
+
+let confettiGeo = null;
+const CONFETTI = 36;
+function burst(b, now) {
+  confettiGeo ??= new THREE.PlaneGeometry(0.06, 0.035);
+  const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, transparent: true, depthWrite: false });
+  const inst = new THREE.InstancedMesh(confettiGeo, material, CONFETTI);
+  inst.frustumCulled = false;
+  inst.raycast = () => {};
+  inst.userData.shadowSet = true;
+  const colors = [new THREE.Color(b.locker.userData.freeColor ?? b.locker.material.color), new THREE.Color('#ffd84d'), new THREE.Color('#ffffff')];
+  const bits = Array.from({ length: CONFETTI }, (_, i) => {
+    inst.setColorAt(i, colors[i % 3]);
+    const a = Math.random() * Math.PI * 2;
+    const spread = 0.6 + Math.random() * 1.2;
+    return {
+      p: b.mouth.clone(),
+      v: new THREE.Vector3(-(1.4 + Math.random() * 1.8), 2 + Math.random() * 2.2, Math.cos(a) * spread),
+      spin: new THREE.Vector3(Math.random() * 12, Math.random() * 12, Math.random() * 12),
+      r: new THREE.Euler(Math.random() * 6, Math.random() * 6, Math.random() * 6),
+    };
+  });
+  b.root.add(inst);
+  b.burst = { inst, bits, born: now };
+}
+
+const _e = new THREE.Euler();
+function updateBurst(b, now, dt) {
+  const f = b.burst;
+  if (!f) return;
+  const age = (now - f.born) / 1000;
+  if (age > 1.6) {
+    f.inst.removeFromParent();
+    f.inst.dispose();
+    f.inst.material.dispose();
+    b.burst = null;
+    return;
+  }
+  const shrink = age < 1.1 ? 1 : 1 - (age - 1.1) / 0.5;
+  f.bits.forEach((bit, i) => {
+    bit.v.y -= 6 * dt;
+    bit.v.multiplyScalar(1 - 1.5 * dt); // air
+    bit.p.addScaledVector(bit.v, dt);
+    bit.p.y = Math.max(bit.p.y, DOCK.top + 0.02); // they settle on the planks
+    _e.set(bit.r.x + bit.spin.x * age, bit.r.y + bit.spin.y * age, bit.r.z + bit.spin.z * age);
+    _m.compose(bit.p, _q.setFromEuler(_e), _s.setScalar(Math.max(0.001, shrink)));
+    f.inst.setMatrixAt(i, _m);
+  });
+  f.inst.instanceMatrix.needsUpdate = true;
+  f.inst.material.opacity = Math.min(1, shrink * 1.5);
+}
+
+// sound: (name, volume) to play a sound; now in ms, dt in s, t in s.
+function updateBooths(booths, { t, dt, now, sound }) {
   for (const b of booths) {
     const taken = !!b.locker.userData.label?.visible;
-    // taken: the free colour, dimmed and greyed, so it reads at a glance
+    if (b.taken === null) {
+      b.taken = taken; // first sight: no show for uniforms already on
+      b.shade = taken ? 1 : 0;
+    } else if (taken !== b.taken) {
+      b.taken = taken;
+      b.since = now;
+      if (taken) {
+        burst(b, now);
+        sound('ui_ping_chime', 0.45);
+        b.clunked = false;
+      }
+    }
+    const age = b.since < 0 ? Infinity : (now - b.since) / 1000;
+
+    // the doors: open, hold, shut (only for a take)
+    let open = 0;
+    if (taken && age < SHUT_AT + SHUT) open = age < OPEN ? ease(age / OPEN) : age < SHUT_AT ? 1 : 1 - ease((age - SHUT_AT) / SHUT);
+    if (taken && !b.clunked && age >= SHUT_AT + SHUT) {
+      b.clunked = true;
+      if (age < SHUT_AT + SHUT + 0.3) sound('engineer_lever_clunk', 0.35);
+    }
+    for (const d of b.doors) d.hinge.rotation.y = d.side * open * 1.75;
+
+    // colour: eases to the taken grey once the doors have shut, and back
+    const target = taken ? 1 : 0;
+    const waiting = taken && age < FADE_AT;
+    if (!waiting) b.shade += Math.sign(target - b.shade) * Math.min(Math.abs(target - b.shade), dt / FADE);
     _base.copy(b.locker.userData.freeColor ?? b.locker.material.color);
-    if (taken) _base.lerp(_grey, 0.55).multiplyScalar(0.55);
+    _tmp.copy(_base).lerp(_grey, 0.55).multiplyScalar(0.55);
+    _base.lerp(_tmp, b.shade);
     b.locker.material.color.copy(_base);
     b.tone.door.color.copy(_base).multiplyScalar(0.92);
     b.tone.panel.color.copy(_base).lerp(_white, 0.18);
     b.tone.roof.color.copy(_base).multiplyScalar(0.62);
-    b.tone.trim.color.copy(_base).lerp(_white, taken ? 0.25 : 0.55);
+    b.tone.trim.color.copy(_base).lerp(_white, 0.55 - 0.3 * b.shade);
     b.tone.mat.color.copy(_base).multiplyScalar(0.7);
-    b.lamp.material.emissiveIntensity = taken ? 0 : 1.2 + Math.sin(t * 3) * 0.2;
-    if (b.prop.userData.spin) b.prop.userData.spin.rotation.z = taken ? 0 : t * 0.8;
-    if (b.prop.userData.bulb) b.prop.userData.bulb.material.emissiveIntensity = taken ? 0.05 : 0.8 + Math.sin(t * 5) * 0.25;
+
+    // lamps: flare while the doors are open, then fade with the colour
+    const flare = taken && age < SHUT_AT ? 1.2 : 0;
+    b.lamp.material.emissiveIntensity = (1 - b.shade) * (1.2 + Math.sin(t * 3) * 0.2) + flare;
+
+    // the roof prop: hops and whirls on a take, a small hop when freed
+    const hop = age < 0.6 ? Math.sin((age / 0.6) * Math.PI) * (taken ? 0.25 : 0.12) : 0;
+    b.prop.position.y = (b.prop.userData.restY ??= b.prop.position.y) + hop;
+    const spin = b.prop.userData.spin;
+    if (spin) {
+      const whirl = taken && age < 1.2 ? 14 * (1 - age / 1.2) : 0;
+      spin.rotation.z += ((1 - b.shade) * 0.8 + whirl) * dt;
+    }
+    const bulb = b.prop.userData.bulb;
+    if (bulb) bulb.material.emissiveIntensity = taken && age < 1 ? 2.5 * (1 - age) + 0.05 : 0.05 + (1 - b.shade) * (0.75 + Math.sin(t * 5) * 0.25);
+
+    updateBurst(b, now, dt);
   }
 }
 
@@ -1147,14 +1281,14 @@ const DOCK_SKY = {
 };
 
 // fair: 1 at the dock in good weather, 0 in the storm (main.js eases it).
-export function updateHarbour(world, camera, { dt, t, fair, lampsOn }) {
+export function updateHarbour(world, camera, { dt, t, fair, lampsOn, sound = () => {} }) {
   const h = world.harbour;
   if (!h) return;
   camera.getWorldPosition(h.dome.position);
   const u = h.dome.material.uniforms;
   u.sunAmount.value = fair;
   if (!world.dock.visible) return;
-  updateBooths(h.booths, t);
+  updateBooths(h.booths, { t, dt, now: t * 1000, sound });
   // sunlit white in the harbour, storm-grey as she climbs into the weather
   h.near.inst.material.emissiveIntensity = 0.1 + 0.45 * fair;
   h.sea.inst.material.emissiveIntensity = 0.1 + 0.45 * fair;
@@ -1186,7 +1320,6 @@ export function updateHarbour(world, camera, { dt, t, fair, lampsOn }) {
 
   for (const lantern of h.lanterns) lantern.material.emissiveIntensity = lampsOn ? 1.6 : 0.35;
   h.beacon.lamp.material.emissiveIntensity = 1 + Math.max(0, Math.sin(t * 2)) * 1.5;
-  void dt;
 }
 
 export { DOCK_SKY };
