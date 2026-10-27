@@ -8,6 +8,8 @@
 // out of an <audio> element: the crew hears no echo even without
 // headphones. Other browsers cancel echo on everything and play directly.
 
+import { onSettingsChange, settings } from './settings.js';
+
 const CHROMIUM = /Chrome\/|Chromium\//.test(navigator.userAgent) && !/Firefox\//.test(navigator.userAgent);
 const SPEAKING_DB = -52; // a voice louder than this is someone talking
 const SPEAKING_HOLD_MS = 300; // and still counts as talking this long after
@@ -15,7 +17,7 @@ const SPEAKING_HOLD_MS = 300; // and still counts as talking this long after
 let ctx = null;
 let bus = null; // every voice, before the volume setting
 let out = null; // the voices and the music together, on their way to the speakers
-let output = null; // { element, pcs } while the Chrome loopback plays
+let output = null; // { element, pcs, sink } while the Chrome loopback is up
 let route = 'direct'; // how voices reach the speakers: 'direct', or 'loopback' on Chrome
 let volume = 1; // the voices slider times the master volume
 const voices = new Map(); // player id -> { track, element, source, gain, filter, pan, analyser, data, loudUntil }
@@ -24,7 +26,13 @@ export function audioContext() {
   if (ctx) return ctx;
   const Context = window.AudioContext ?? window.webkitAudioContext;
   if (!Context) return null;
-  ctx = new Context({ latencyHint: 'interactive' });
+  // WebRTC voices are 48 kHz: a context at the sound card's own rate
+  // (often 44.1 kHz) would resample every voice on the way in and out.
+  try {
+    ctx = new Context({ latencyHint: 'interactive', sampleRate: 48000 });
+  } catch {
+    ctx = new Context({ latencyHint: 'interactive' });
+  }
   bus = ctx.createGain();
   bus.gain.value = volume;
   out = ctx.createGain();
@@ -39,6 +47,52 @@ export function audioContext() {
 // does not send the music back down each other's microphones.
 export function musicInput() {
   return audioContext() ? out : null;
+}
+
+// With headphones on there is no echo to cancel, so the sound skips the
+// detour (and the delay it adds) and goes straight to the speakers.
+function routeOut() {
+  if (!out) return;
+  const viaLoopback = !!output && !settings.headphones;
+  try {
+    out.disconnect();
+  } catch {
+    // not connected yet
+  }
+  out.connect(viaLoopback ? output.sink : ctx.destination);
+  route = viaLoopback ? 'loopback' : 'direct';
+}
+onSettingsChange((key) => {
+  if (key === null || key === 'headphones') routeOut();
+});
+
+// The detour's own buffer, in ms (null when it is not in use).
+export async function loopbackDelay() {
+  if (route !== 'loopback' || !output) return null;
+  return receiveDelay(output.pcs[1]);
+}
+
+// How long sound waits in a receiving jitter buffer, in ms, averaged since
+// the last time this was asked. target: a connection or a receiver.
+const lastBuffer = new WeakMap();
+export async function receiveDelay(target) {
+  try {
+    const stats = await target.getStats();
+    let delay = 0;
+    let count = 0;
+    stats.forEach((s) => {
+      if (s.type === 'inbound-rtp' && s.kind === 'audio') {
+        delay += s.jitterBufferDelay ?? 0;
+        count += s.jitterBufferEmittedCount ?? 0;
+      }
+    });
+    const last = lastBuffer.get(target) ?? { delay: 0, count: 0 };
+    lastBuffer.set(target, { delay, count });
+    if (count - last.count > 0) return Math.round(((delay - last.delay) / (count - last.count)) * 1000);
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 // Whether the sound is up and running (without starting it).
@@ -68,7 +122,7 @@ export function outputRoute() {
 async function routeThroughLoopback() {
   const sink = ctx.createMediaStreamDestination();
   sink.channelCount = 2;
-  out.connect(sink);
+  out.connect(settings.headphones ? ctx.destination : sink);
   const send = new RTCPeerConnection();
   const take = new RTCPeerConnection();
   let fell = false;
@@ -77,17 +131,11 @@ async function routeThroughLoopback() {
     // Voices still work; only the echo cancellation is lost.
     if (fell) return;
     fell = true;
-    route = 'direct';
     send.close();
     take.close();
     if (output) output.element.srcObject = null;
     output = null;
-    try {
-      out.disconnect(sink);
-    } catch {
-      // already apart
-    }
-    out.connect(ctx.destination);
+    routeOut();
   };
   try {
     send.onicecandidate = (e) => e.candidate && take.addIceCandidate(e.candidate).catch(() => {});
@@ -104,8 +152,8 @@ async function routeThroughLoopback() {
     const element = new Audio();
     element.autoplay = true;
     element.srcObject = stream;
-    output = { element, pcs: [send, take] };
-    route = 'loopback';
+    output = { element, pcs: [send, take], sink };
+    routeOut();
     element.play().catch(() => {}); // before the first click: wakeAudio() retries
     // Connected, or given up on: watch for the line failing later too.
     const watch = () => {
