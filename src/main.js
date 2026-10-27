@@ -1201,7 +1201,8 @@ function markShadows(now) {
   });
 }
 
-// The music: calm at the menu and the dock, steady in the air, epic when
+// The music: the title theme at the main menu, calm once you are in a
+// game (crew screen, dock, result), steady in the air, epic when
 // it goes wrong (a storm wall coming, pirates, fire, the ship low). The
 // epic tune holds a while after the danger passes, so it doesn't flicker.
 // Silence for the ending's sting, then the harbour tune again.
@@ -1211,7 +1212,7 @@ let dangerUntil = 0;
 let musicPhase = null;
 let musicPhaseSince = 0;
 function musicMood(now) {
-  if (!sessionActive) return 'harbour';
+  if (!sessionActive) return 'title'; // the main menu has its own theme
   const phase = state.phase;
   if (phase !== musicPhase) {
     musicPhase = phase;
