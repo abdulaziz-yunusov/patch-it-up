@@ -21,13 +21,13 @@ import { load, save } from './save.js';
 // Where things are, in ship space (the Blender rooms put them there).
 // Each is the point the marker's tip hangs over.
 const AT = {
-  rack: { x: -5, y: 1.95, z: 2.6 }, // supply rack, engine room, by the door
-  furnace: { x: -6.2, y: 1.15, z: -1.86 },
-  crate: { x: -11.45, y: 1.35, z: 2.5 }, // the big crate of spare fuses
-  buckets: { x: -11.3, y: 1.7, z: -2.8 }, // the bucket rail
+  rack: { x: -6, y: 1.95, z: 2.6 }, // supply rack, engine room, by the door
+  furnace: { x: -8.2, y: 1.15, z: -1.86 },
+  crate: { x: -14.45, y: 1.35, z: 2.5 }, // the big crate of spare fuses
+  buckets: { x: -14.3, y: 1.7, z: -2.8 }, // the bucket rail
   vent: { x: 2, y: 1.75, z: -2.5 }, // the steam valve, power room
-  fuseBox: { x: 3.3, y: 2.05, z: -2.8 },
-  wheel: { x: 10.4, y: 1.6, z: 0 },
+  fuseBox: { x: 4.3, y: 2.05, z: -2.8 },
+  wheel: { x: 13.4, y: 1.6, z: 0 },
 };
 const LEVER_X = [-1.2, 0, 1.2]; // engines, shields, lift
 const lever = (i) => ({ x: LEVER_X[i], y: 1.35, z: 2.09 });
@@ -38,7 +38,7 @@ const hole = (id) => {
 };
 
 // Where the player starts: the engine room, looking toward the bow.
-export const TRAINING_START = { x: -8.6, y: 0.4, z: 0.6, yaw: -Math.PI / 2 };
+export const TRAINING_START = { x: -10.6, y: 0.4, z: 0.6, yaw: -Math.PI / 2 };
 
 const HOOK_SPOT = 2; // the helm's wall: the pirates come at the pilot
 const RAID_SIDE = 1; // starboard

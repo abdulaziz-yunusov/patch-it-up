@@ -157,7 +157,7 @@ export const SPAWNS = [
   { x: -1.5, y: -0.8, z: -11 },
 ];
 export const SPAWN_YAW = -Math.PI / 2;
-export const KIT_HOME = { x: -6.6, y: 0.15, z: 1.6 };
+export const KIT_HOME = { x: -8.6, y: 0.15, z: 1.6 };
 
 export const state = {
   // 'gathering' on the host's crew screen, 'lobby' at the dock, 'takeoff'

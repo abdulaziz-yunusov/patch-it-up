@@ -21,6 +21,52 @@ export function softenMetal(material) {
   }
 }
 
+// A room built for one length, fitted into a longer one: each piece keeps
+// to the wall it stood against (a bench at the stern moves with the
+// stern, a sign on a bulkhead with the bulkhead), pieces out on the floor
+// move with the room's middle, and pieces that ran the whole length
+// (pipes, beams) stretch to the new length.
+const NEAR_WALL = 1.6; // metres from an end wall that count as standing at it
+export function stretchRoom(model, { from: [a, b], to: [a2, b2] }) {
+  model.updateMatrixWorld(true);
+  const mid = (a2 + b2) / 2 - (a + b) / 2;
+  const grow = (b2 - a2) / (b - a);
+  const box = new THREE.Box3();
+  const centre = new THREE.Vector3();
+  const moved = new Set();
+  const pieces = [];
+  model.traverse((o) => o !== model && (o.isMesh || o.name.startsWith('light_')) && pieces.push(o));
+  const moves = pieces.map((o) => {
+    let x;
+    let span = 0;
+    if (o.isMesh) {
+      box.setFromObject(o);
+      x = box.getCenter(centre).x;
+      span = box.max.x - box.min.x;
+    } else x = o.getWorldPosition(centre).x;
+    if (span > 0.6 * (b - a)) return { o, dx: mid, stretch: true };
+    return { o, dx: x < a + NEAR_WALL ? a2 - a : x > b - NEAR_WALL ? b2 - b : mid, stretch: false };
+  });
+  for (const { o, dx, stretch } of moves) {
+    // a piece inside one already moved goes with it
+    let inside = false;
+    for (let p = o.parent; p && p !== model; p = p.parent) if (moved.has(p)) inside = true;
+    if (inside) continue;
+    const parent = o.parent;
+    const origin = parent.worldToLocal(new THREE.Vector3(0, 0, 0));
+    const step = parent.worldToLocal(new THREE.Vector3(dx, 0, 0)).sub(origin);
+    o.position.add(step);
+    if (stretch) {
+      // stretch along whichever local axis runs along the ship
+      const axis = new THREE.Vector3(1, 0, 0).transformDirection(new THREE.Matrix4().copy(o.matrixWorld).invert());
+      const k = Math.abs(axis.x) > Math.abs(axis.y) && Math.abs(axis.x) > Math.abs(axis.z) ? 'x' : Math.abs(axis.y) > Math.abs(axis.z) ? 'y' : 'z';
+      o.scale[k] *= grow;
+    }
+    moved.add(o);
+  }
+  model.updateMatrixWorld(true);
+}
+
 // options:
 //   url       model path under public/
 //   name      name for the root group
@@ -30,8 +76,10 @@ export function softenMetal(material) {
 //   solid     extra mesh names, besides col_*, that block players
 //   lights    names of light_* empties that get a real point light
 //   lampColor glass tint for lamp_* meshes (null keeps their own colour)
+//   stretch   { from: [stern, bow], to: [stern, bow] }: the room was built
+//             between `from` along the ship and now spans `to` (see below)
 export async function loadRoom(world, options) {
-  const { url, name, stations = {}, groups = [], solid = [], lights = [], lampColor = '#ffd38a' } = options;
+  const { url, name, stations = {}, groups = [], solid = [], lights = [], lampColor = '#ffd38a', stretch = null } = options;
   let gltf;
   try {
     gltf = await new GLTFLoader().loadAsync(url);
@@ -42,6 +90,7 @@ export async function loadRoom(world, options) {
   const ship = world.ship;
   const model = gltf.scene;
   model.name = name;
+  if (stretch) stretchRoom(model, stretch);
 
   const drives = {};
   model.traverse((obj) => {
