@@ -12,6 +12,7 @@
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { styleRoomModel } from './interior.js';
 
 // Without an environment map a fully metallic surface renders black.
 export function softenMetal(material) {
@@ -114,6 +115,8 @@ export async function loadRoom(world, options) {
     const d = spot.userData;
     spot.add(new THREE.PointLight(d.light_color ?? '#ffc070', (d.light_intensity ?? 3) * 0.6, d.light_distance ?? 6, 2));
   }
+
+  styleRoomModel(model); // wood grain on the wooden pieces, warmer lamps
 
   // Colliders are measured with the ship standing still, in ship space.
   const saved = ship.quaternion.clone();

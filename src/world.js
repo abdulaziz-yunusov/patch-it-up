@@ -103,7 +103,7 @@ export function addSky(scene) {
 export function addLights(scene) {
   // The ground colour matters indoors: it is what lights the ceiling and
   // every downward face, and without it the hull reads as a cave.
-  const hemi = new THREE.HemisphereLight('#ffd9a0', '#b5a493', 2.8);
+  const hemi = new THREE.HemisphereLight('#ffe6c6', '#7d5f4a', 2.6);
   scene.add(hemi);
   const sun = new THREE.DirectionalLight('#fff2d6', 1.3);
   sun.position.set(8, 12, 10);
@@ -278,6 +278,7 @@ export function buildShip() {
     fires,
     storm,
     roomMaterials,
+    hullMaterials: { wood, deck, metal },
     colliders,
     breaches,
     hatch,
