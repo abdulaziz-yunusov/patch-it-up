@@ -1069,11 +1069,12 @@ function dressLockers(world, root) {
       part(mesh(new RoundedBoxGeometry(0.05, doorH, width * 0.44, 2, 0.015), tone.door, 0, 0, dz));
       for (const py of [0.24, -0.2]) part(mesh(new RoundedBoxGeometry(0.03, doorH * 0.32, width * 0.3, 2, 0.01), tone.panel, -0.03, py * doorH, dz));
       part(mesh(new THREE.SphereGeometry(0.04, 10, 8), paint('#e2b84a', { rough: 0.3 }), -0.06, 0, side * 0.07 - side * (width * 0.455)));
-      // dark inside, seen only while the doors stand open
-      g.add(mesh(new THREE.BoxGeometry(0.02, doorH * 0.96, width * 0.44), paint('#2a1c14'), front - 0.003, doorY, c.z + side * (width * 0.235), { shadow: false }));
       g.add(hinge);
       doors.push({ hinge, side });
     }
+    // the dark inside, one piece the width of both doors (no post down the
+    // middle), seen only while the doors stand open
+    g.add(mesh(new THREE.BoxGeometry(0.02, doorH * 0.96, width * 0.9), paint('#2a1c14'), front - 0.003, doorY, c.z, { shadow: false }));
     // trim round the front
     const trimT = 0.06;
     add(mesh(new THREE.BoxGeometry(0.05, trimT, width + 0.04), tone.trim, front - 0.02, doorY + doorH / 2 + trimT / 2, c.z));
