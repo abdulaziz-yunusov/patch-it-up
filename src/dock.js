@@ -121,7 +121,7 @@ export async function loadDockModel(world) {
 
     const centre = centreOf(locker);
     const label = createLabel(1.4, 0.36);
-    label.position.set(centre.x - 0.4, DOCK.top + 2.7, centre.z);
+    label.position.set(centre.x - 0.4, DOCK.top + 3.3, centre.z); // above the booth and its roof prop
     label.rotation.y = -Math.PI / 2; // face the players, who stand to the west
     label.visible = false;
     dock.add(label);

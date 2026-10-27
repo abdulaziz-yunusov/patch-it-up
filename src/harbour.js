@@ -681,7 +681,7 @@ export function buildHarbour(world, scene, model) {
   // corner and one halfway along each side. Criss-crossing over the dock
   // with lanterns, and along both rails, well above everyone's heads.
   const TIE = 3.6; // where the lines are tied, metres up (the planks are at -1.2)
-  const corners = { nw: [-6.2, -25.2], ne: [6.2, -25.2], sw: [-6.2, -4.8], se: [6.2, -4.8], w: [-6.2, -15.8], e: [6.2, -15.8] };
+  const corners = { nw: [-6.2, -25.2], ne: [6.2, -25.2], sw: [-6.2, -4.8], se: [6.2, -4.8], w: [-6.2, -16.5], e: [6.2, -16.5] };
   for (const [x, z] of Object.values(corners)) {
     const height = TIE + 0.3 - DOCK.top;
     harbour.add(mesh(new THREE.CylinderGeometry(0.09, 0.12, height, 8), paint(PALETTE.beam), x, DOCK.top + height / 2, z));
@@ -784,14 +784,21 @@ export function buildHarbour(world, scene, model) {
     return bird;
   });
 
+  const booths = dressLockers(world, harbour);
+
   // Everything that never moves becomes a few big meshes, one per
   // material: hundreds of flowers, leaves and beams cost a few draws.
-  bake(harbour, new Set([...gulls, flag, pennant, near.inst, sea.inst, beacon.lamp, ...lanterns]));
+  const live = booths.flatMap((b) => {
+    const parts = [b.prop, ...b.doors.map((d) => d.hinge)];
+    b.prop.parent.traverse((o) => o.isMesh && (Object.values(b.tone).includes(o.material) || o.material === b.lamp.material) && parts.push(o));
+    return parts;
+  });
+  bake(harbour, new Set([...gulls, flag, pennant, near.inst, sea.inst, beacon.lamp, ...lanterns, ...live]));
 
   const dome = skyDome();
   scene.add(dome);
 
-  world.harbour = { group: harbour, near, sea, gulls, flags: [flag, pennant], lanterns, beacon, dome };
+  world.harbour = { group: harbour, near, sea, gulls, flags: [flag, pennant], lanterns, beacon, dome, booths };
   return world.harbour;
 }
 
@@ -863,6 +870,409 @@ function restyleModel(model) {
   });
 }
 
+
+// --- the uniform booths ---------------------------------------------------------
+
+// The role's symbol, painted on a round badge: a wrench, a lightning bolt,
+// a ship's wheel. Dark ink on cream, so it reads in any colour palette.
+function badgeTexture(role) {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 256;
+  const g = canvas.getContext('2d');
+  g.fillStyle = '#fff4dc';
+  g.fillRect(0, 0, 256, 256);
+  g.translate(128, 128);
+  g.fillStyle = g.strokeStyle = '#2a2f4a';
+  g.lineCap = g.lineJoin = 'round';
+  if (role === 'mechanic') {
+    g.rotate(-Math.PI / 4);
+    g.lineWidth = 34;
+    g.beginPath();
+    g.moveTo(0, -40);
+    g.lineTo(0, 78);
+    g.stroke();
+    g.beginPath();
+    g.arc(0, -62, 42, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = '#fff4dc';
+    g.fillRect(-15, -112, 30, 50); // the jaw's opening
+  } else if (role === 'engineer') {
+    g.beginPath();
+    for (const [x, y] of [[18, -100], [-52, 14], [-6, 14], [-22, 100], [56, -20], [8, -20], [34, -100]]) g.lineTo(x, y);
+    g.closePath();
+    g.fill();
+  } else {
+    g.lineWidth = 16;
+    g.beginPath();
+    g.arc(0, 0, 62, 0, Math.PI * 2);
+    g.stroke();
+    g.beginPath();
+    g.arc(0, 0, 16, 0, Math.PI * 2);
+    g.fill();
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      g.lineWidth = 12;
+      g.beginPath();
+      g.moveTo(Math.cos(a) * 16, Math.sin(a) * 16);
+      g.lineTo(Math.cos(a) * 100, Math.sin(a) * 100);
+      g.stroke();
+      g.beginPath();
+      g.arc(Math.cos(a) * 100, Math.sin(a) * 100, 11, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function nameTexture(text) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 640;
+  canvas.height = 120;
+  const g = canvas.getContext('2d');
+  g.fillStyle = '#3b2516';
+  g.fillRect(0, 0, 640, 120);
+  g.strokeStyle = '#c8924f';
+  g.lineWidth = 8;
+  g.strokeRect(8, 8, 624, 104);
+  g.fillStyle = '#fff1c9';
+  g.font = '900 78px "Lilita One", "Arial Black", sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(text, 320, 64);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+// What stands on each roof.
+function roofProp(role) {
+  const g = new THREE.Group();
+  const brass = paint('#e2b84a', { rough: 0.35 });
+  if (role === 'mechanic') {
+    // a gear, standing up
+    const gear = new THREE.Group();
+    gear.add(mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.08, 20).rotateX(Math.PI / 2), brass));
+    for (let i = 0; i < 10; i++) {
+      const tooth = mesh(new THREE.BoxGeometry(0.08, 0.09, 0.08), brass);
+      const a = (i / 10) * Math.PI * 2;
+      tooth.position.set(Math.cos(a) * 0.23, Math.sin(a) * 0.23, 0);
+      tooth.rotation.z = a;
+      gear.add(tooth);
+    }
+    gear.add(mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.1, 12).rotateX(Math.PI / 2), paint('#5d5a66', { rough: 0.5 })));
+    gear.position.y = 0.3;
+    gear.rotation.y = Math.PI / 2;
+    g.add(gear);
+    g.userData.spin = gear;
+  } else if (role === 'engineer') {
+    // a glowing bulb on a brass base, and a little bolt beside it
+    g.add(mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.12, 12), brass, 0, 0.06, 0));
+    const bulb = mesh(new THREE.SphereGeometry(0.13, 16, 12), paint('#fff3b0', { emissive: '#ffd84d', glow: 0.9, rough: 0.2 }), 0, 0.24, 0, { shadow: false });
+    bulb.material = bulb.material.clone();
+    g.add(bulb);
+    g.userData.bulb = bulb;
+    const shape = new THREE.Shape();
+    [[0.04, 0.2], [-0.07, 0.02], [0, 0.02], [-0.03, -0.18], [0.09, 0.03], [0.02, 0.03], [0.07, 0.2]].forEach(([x, y], i) => (i ? shape.lineTo(x, y) : shape.moveTo(x, y)));
+    // a bolt either side of the bulb, mirror images
+    for (const side of [-1, 1]) {
+      const bolt = mesh(new THREE.ExtrudeGeometry(shape, { depth: 0.04, bevelEnabled: false }).translate(-0.01, 0, -0.02), paint('#ffd84d', { emissive: '#ffb020', glow: 0.3 }), 0, 0.26, side * 0.28);
+      bolt.rotation.y = -Math.PI / 2;
+      bolt.scale.x = side;
+      g.add(bolt);
+    }
+  } else {
+    // a ship's wheel
+    const wheel = new THREE.Group();
+    const wood = paint('#a0632f');
+    wheel.add(mesh(new THREE.TorusGeometry(0.2, 0.025, 8, 24), wood));
+    wheel.add(mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.06, 12).rotateX(Math.PI / 2), brass));
+    for (let i = 0; i < 8; i++) {
+      const spoke = mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.56, 6), wood);
+      spoke.rotation.z = (i / 4) * Math.PI; // 4 rods through the hub: 8 even spokes, 45° apart
+      if (i < 4) wheel.add(spoke);
+      const knob = mesh(new THREE.SphereGeometry(0.03, 8, 6), wood);
+      const a = (i / 8) * Math.PI * 2;
+      knob.position.set(Math.cos(a) * 0.29, Math.sin(a) * 0.29, 0);
+      wheel.add(knob);
+    }
+    wheel.position.y = 0.33;
+    wheel.rotation.y = Math.PI / 2;
+    g.add(wheel);
+    g.userData.spin = wheel;
+  }
+  return g;
+}
+
+const ROLE_NAMES = { mechanic: 'MECHANIC', engineer: 'ENGINEER', pilot: 'PILOT' };
+
+// Each uniform locker becomes a little booth. The locker mesh stays (the
+// game colours it, aims at it and bumps into it); its painted-on doors,
+// plate and flat lid make way for real ones, and every coloured part
+// follows the locker's colour, so palettes and the taken look still work.
+function dressLockers(world, root) {
+  const booths = [];
+  for (const locker of world.lockers ?? []) {
+    const role = locker.userData.takes;
+    for (const part of ['door_line', 'handle', 'nameplate', 'roof']) {
+      const old = locker.parent?.getObjectByName(`${locker.name}_${part}`);
+      if (old) old.visible = false;
+    }
+    // rounded body, same size and place
+    const geo = locker.geometry;
+    geo.computeBoundingBox();
+    const local = geo.boundingBox;
+    const size = local.getSize(new THREE.Vector3());
+    const mid = local.getCenter(new THREE.Vector3());
+    locker.geometry = new RoundedBoxGeometry(size.x, size.y, size.z, 3, Math.min(size.x, size.y, size.z) * 0.06).translate(mid.x, mid.y, mid.z);
+
+    const box = new THREE.Box3().setFromObject(locker);
+    const c = box.getCenter(new THREE.Vector3());
+    const s = box.getSize(new THREE.Vector3());
+    const front = box.min.x; // the booths face the dock, towards -x
+    const width = s.z;
+    const top = box.max.y;
+    const g = new THREE.Group();
+
+    const tone = {
+      door: new THREE.MeshStandardMaterial({ roughness: 0.75 }),
+      panel: new THREE.MeshStandardMaterial({ roughness: 0.8 }),
+      roof: new THREE.MeshStandardMaterial({ roughness: 0.85, flatShading: true }),
+      trim: new THREE.MeshStandardMaterial({ roughness: 0.7 }),
+      mat: new THREE.MeshStandardMaterial({ roughness: 1 }),
+    };
+    const add = (m) => {
+      m.userData.shadowSet = true;
+      g.add(m);
+      return m;
+    };
+
+    // base: a stone step and a doormat
+    add(mesh(new RoundedBoxGeometry(s.x + 0.24, 0.14, width + 0.24, 2, 0.03), paint('#9b8aa8', { rough: 0.95 }), c.x, DOCK.top + 0.07, c.z));
+    add(mesh(new RoundedBoxGeometry(0.5, 0.03, width * 0.8, 2, 0.01), tone.mat, front - 0.42, DOCK.top + 0.015, c.z, { shadow: false }));
+
+    // double doors with raised panels and brass knobs
+    const doorH = s.y * 0.6; // room above for the name board, under the badge
+    const doorY = DOCK.top + 0.14 + doorH / 2 + 0.04;
+    // Each door hangs on a hinge at its outer edge, so it can swing open.
+    const doors = [];
+    for (const side of [-1, 1]) {
+      const hingeZ = c.z + side * (width * 0.455);
+      const hinge = new THREE.Group();
+      hinge.position.set(front - 0.02, doorY, hingeZ);
+      const dz = side * (width * 0.235) - side * (width * 0.455); // door centre, from the hinge
+      const part = (m) => {
+        m.userData.shadowSet = true;
+        hinge.add(m);
+      };
+      part(mesh(new RoundedBoxGeometry(0.05, doorH, width * 0.44, 2, 0.015), tone.door, 0, 0, dz));
+      for (const py of [0.24, -0.2]) part(mesh(new RoundedBoxGeometry(0.03, doorH * 0.32, width * 0.3, 2, 0.01), tone.panel, -0.03, py * doorH, dz));
+      part(mesh(new THREE.SphereGeometry(0.04, 10, 8), paint('#e2b84a', { rough: 0.3 }), -0.06, 0, side * 0.07 - side * (width * 0.455)));
+      g.add(hinge);
+      doors.push({ hinge, side });
+    }
+    // the dark inside, one piece the width of both doors (no post down the
+    // middle), seen only while the doors stand open
+    g.add(mesh(new THREE.BoxGeometry(0.02, doorH * 0.96, width * 0.9), paint('#2a1c14'), front - 0.003, doorY, c.z, { shadow: false }));
+    // trim round the front
+    const trimT = 0.06;
+    add(mesh(new THREE.BoxGeometry(0.05, trimT, width + 0.04), tone.trim, front - 0.02, doorY + doorH / 2 + trimT / 2, c.z));
+    for (const side of [-1, 1]) add(mesh(new THREE.BoxGeometry(0.05, s.y, trimT), tone.trim, front - 0.02, c.y, c.z + side * (width / 2 - trimT / 2)));
+
+    // badge with the role's symbol, and the name board above the doors
+    const badgeY = top - 0.24;
+    const ring = add(mesh(new THREE.CylinderGeometry(0.23, 0.23, 0.05, 28).rotateZ(Math.PI / 2), tone.trim, front - 0.04, badgeY, c.z));
+    ring.scale.set(1, 1, 1);
+    const badgeMat = new THREE.MeshStandardMaterial({ map: badgeTexture(role), roughness: 0.6 });
+    const badge = add(mesh(new THREE.CircleGeometry(0.19, 28), badgeMat, front - 0.075, badgeY, c.z, { shadow: false }));
+    badge.rotation.y = -Math.PI / 2;
+    // the name board: on the front, between the doors and the badge, square
+    // to the dock and clear of the roof, so it reads from across the planks
+    const nameY = doorY + doorH / 2 + 0.13;
+    const nameMat = new THREE.MeshStandardMaterial({ map: nameTexture(ROLE_NAMES[role] ?? role.toUpperCase()), roughness: 0.8 });
+    const board = add(mesh(new THREE.PlaneGeometry(width * 0.9, width * 0.17), nameMat, front - 0.081, nameY, c.z, { shadow: false }));
+    board.rotation.y = -Math.PI / 2;
+    add(mesh(new THREE.BoxGeometry(0.05, width * 0.18, width * 0.92), paint('#5b3a22'), front - 0.05, nameY, c.z));
+
+    // pitched roof with an overhang, ridge running along the dock
+    const roofGeo = new THREE.CylinderGeometry(1, 1, 1, 3, 1);
+    roofGeo.rotateX(Math.PI / 2);
+    roofGeo.rotateZ(Math.PI / 2 + Math.PI);
+    const roof = add(mesh(roofGeo, tone.roof, c.x - 0.04, top + 0.3, c.z));
+    roof.scale.set(0.62, 0.45, width + 0.3);
+    roof.position.y = top + 0.23;
+    add(mesh(new THREE.BoxGeometry(s.x + 0.3, 0.06, width + 0.32), paint('#5b3a22'), c.x - 0.04, top + 0.02, c.z));
+
+    // a lamp on a bracket, lit while the uniform is free
+    // a lamp on a bracket each side of the badge, lit while the uniform is free
+    const lampMat = new THREE.MeshStandardMaterial({ color: '#fff1c4', emissive: '#ffcc66', emissiveIntensity: 1.2 });
+    for (const side of [-1, 1]) {
+      const lampZ = c.z + side * (width / 2 - 0.02);
+      add(mesh(new THREE.BoxGeometry(0.2, 0.03, 0.03), paint('#3e4a5c'), front - 0.09, badgeY + 0.06, lampZ));
+      add(mesh(new THREE.ConeGeometry(0.07, 0.06, 12), paint('#3e4a5c'), front - 0.17, badgeY + 0.05, lampZ));
+      add(mesh(new THREE.SphereGeometry(0.055, 12, 10), lampMat, front - 0.17, badgeY - 0.01, lampZ, { shadow: false }));
+    }
+    const lamp = { material: lampMat };
+
+    // the role's prop on the roof
+    const prop = roofProp(role);
+    prop.position.set(c.x - 0.04, top + 0.42, c.z);
+    prop.traverse((o) => o.isMesh && (o.userData.shadowSet = true));
+    g.add(prop);
+
+    root.add(g);
+    booths.push({
+      locker,
+      tone,
+      lamp,
+      prop,
+      doors,
+      mouth: new THREE.Vector3(front - 0.15, doorY + 0.2, c.z), // where the confetti comes out
+      color: role,
+      root: g,
+      shade: null, // 0 free .. 1 taken, eased; null until first seen
+      taken: null,
+      since: -1, // when it was last taken (or freed)
+      burst: null,
+    });
+  }
+  return booths;
+}
+
+const _base = new THREE.Color();
+const _white = new THREE.Color('#ffffff');
+const _grey = new THREE.Color('#7a7a88');
+const _tmp = new THREE.Color();
+// Every frame: the booth's coloured parts follow its locker's colour (free,
+// taken, or the colour-blind palette); its lamp is lit while it is free.
+// --- the take-a-uniform animation ------------------------------------------------
+//
+// When a uniform is taken, its booth plays a little show, the same on every
+// screen (each works it out from the uniform being taken):
+//   0.00 s  the doors swing open, the roof prop hops and whirls
+//   0.10 s  a burst of confetti out of the doorway, with a chime
+//   0.75 s  the doors swing shut, with a clunk
+//   0.90 s  the booth fades to its taken grey, the lamps go out
+// Put back, the booth brightens again with a little hop of its prop.
+const OPEN = 0.25;
+const SHUT_AT = 0.75;
+const SHUT = 0.25;
+const FADE_AT = 0.9;
+const FADE = 0.6;
+const ease = (x) => 1 - (1 - x) ** 3;
+
+let confettiGeo = null;
+const CONFETTI = 36;
+function burst(b, now) {
+  confettiGeo ??= new THREE.PlaneGeometry(0.06, 0.035);
+  const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, transparent: true, depthWrite: false });
+  const inst = new THREE.InstancedMesh(confettiGeo, material, CONFETTI);
+  inst.frustumCulled = false;
+  inst.raycast = () => {};
+  inst.userData.shadowSet = true;
+  const colors = [new THREE.Color(b.locker.userData.freeColor ?? b.locker.material.color), new THREE.Color('#ffd84d'), new THREE.Color('#ffffff')];
+  const bits = Array.from({ length: CONFETTI }, (_, i) => {
+    inst.setColorAt(i, colors[i % 3]);
+    const a = Math.random() * Math.PI * 2;
+    const spread = 0.6 + Math.random() * 1.2;
+    return {
+      p: b.mouth.clone(),
+      v: new THREE.Vector3(-(1.4 + Math.random() * 1.8), 2 + Math.random() * 2.2, Math.cos(a) * spread),
+      spin: new THREE.Vector3(Math.random() * 12, Math.random() * 12, Math.random() * 12),
+      r: new THREE.Euler(Math.random() * 6, Math.random() * 6, Math.random() * 6),
+    };
+  });
+  b.root.add(inst);
+  b.burst = { inst, bits, born: now };
+}
+
+const _e = new THREE.Euler();
+function updateBurst(b, now, dt) {
+  const f = b.burst;
+  if (!f) return;
+  const age = (now - f.born) / 1000;
+  if (age > 1.6) {
+    f.inst.removeFromParent();
+    f.inst.dispose();
+    f.inst.material.dispose();
+    b.burst = null;
+    return;
+  }
+  const shrink = age < 1.1 ? 1 : 1 - (age - 1.1) / 0.5;
+  f.bits.forEach((bit, i) => {
+    bit.v.y -= 6 * dt;
+    bit.v.multiplyScalar(1 - 1.5 * dt); // air
+    bit.p.addScaledVector(bit.v, dt);
+    bit.p.y = Math.max(bit.p.y, DOCK.top + 0.02); // they settle on the planks
+    _e.set(bit.r.x + bit.spin.x * age, bit.r.y + bit.spin.y * age, bit.r.z + bit.spin.z * age);
+    _m.compose(bit.p, _q.setFromEuler(_e), _s.setScalar(Math.max(0.001, shrink)));
+    f.inst.setMatrixAt(i, _m);
+  });
+  f.inst.instanceMatrix.needsUpdate = true;
+  f.inst.material.opacity = Math.min(1, shrink * 1.5);
+}
+
+// sound: (name, volume) to play a sound; now in ms, dt in s, t in s.
+function updateBooths(booths, { t, dt, now, sound }) {
+  for (const b of booths) {
+    const taken = !!b.locker.userData.label?.visible;
+    if (b.taken === null) {
+      b.taken = taken; // first sight: no show for uniforms already on
+      b.shade = taken ? 1 : 0;
+    } else if (taken !== b.taken) {
+      b.taken = taken;
+      b.since = now;
+      if (taken) {
+        burst(b, now);
+        sound('ui_ping_chime', 0.45);
+        b.clunked = false;
+      }
+    }
+    const age = b.since < 0 ? Infinity : (now - b.since) / 1000;
+
+    // the doors: open, hold, shut (only for a take)
+    let open = 0;
+    if (taken && age < SHUT_AT + SHUT) open = age < OPEN ? ease(age / OPEN) : age < SHUT_AT ? 1 : 1 - ease((age - SHUT_AT) / SHUT);
+    if (taken && !b.clunked && age >= SHUT_AT + SHUT) {
+      b.clunked = true;
+      if (age < SHUT_AT + SHUT + 0.3) sound('engineer_lever_clunk', 0.35);
+    }
+    for (const d of b.doors) d.hinge.rotation.y = d.side * open * 1.75;
+
+    // colour: eases to the taken grey once the doors have shut, and back
+    const target = taken ? 1 : 0;
+    const waiting = taken && age < FADE_AT;
+    if (!waiting) b.shade += Math.sign(target - b.shade) * Math.min(Math.abs(target - b.shade), dt / FADE);
+    _base.copy(b.locker.userData.freeColor ?? b.locker.material.color);
+    _tmp.copy(_base).lerp(_grey, 0.55).multiplyScalar(0.55);
+    _base.lerp(_tmp, b.shade);
+    b.locker.material.color.copy(_base);
+    b.tone.door.color.copy(_base).multiplyScalar(0.92);
+    b.tone.panel.color.copy(_base).lerp(_white, 0.18);
+    b.tone.roof.color.copy(_base).multiplyScalar(0.62);
+    b.tone.trim.color.copy(_base).lerp(_white, 0.55 - 0.3 * b.shade);
+    b.tone.mat.color.copy(_base).multiplyScalar(0.7);
+
+    // lamps: flare while the doors are open, then fade with the colour
+    const flare = taken && age < SHUT_AT ? 1.2 : 0;
+    b.lamp.material.emissiveIntensity = (1 - b.shade) * (1.2 + Math.sin(t * 3) * 0.2) + flare;
+
+    // the roof prop: hops and whirls on a take, a small hop when freed
+    const hop = age < 0.6 ? Math.sin((age / 0.6) * Math.PI) * (taken ? 0.25 : 0.12) : 0;
+    b.prop.position.y = (b.prop.userData.restY ??= b.prop.position.y) + hop;
+    const spin = b.prop.userData.spin;
+    if (spin) {
+      const whirl = taken && age < 1.2 ? 14 * (1 - age / 1.2) : 0;
+      spin.rotation.z += ((1 - b.shade) * 0.8 + whirl) * dt;
+    }
+    const bulb = b.prop.userData.bulb;
+    if (bulb) bulb.material.emissiveIntensity = taken && age < 1 ? 2.5 * (1 - age) + 0.05 : 0.05 + (1 - b.shade) * (0.75 + Math.sin(t * 5) * 0.25);
+
+    updateBurst(b, now, dt);
+  }
+}
+
 // --- every frame -----------------------------------------------------------
 
 const DOCK_SKY = {
@@ -872,13 +1282,14 @@ const DOCK_SKY = {
 };
 
 // fair: 1 at the dock in good weather, 0 in the storm (main.js eases it).
-export function updateHarbour(world, camera, { dt, t, fair, lampsOn }) {
+export function updateHarbour(world, camera, { dt, t, fair, lampsOn, sound = () => {} }) {
   const h = world.harbour;
   if (!h) return;
   camera.getWorldPosition(h.dome.position);
   const u = h.dome.material.uniforms;
   u.sunAmount.value = fair;
   if (!world.dock.visible) return;
+  updateBooths(h.booths, { t, dt, now: t * 1000, sound });
   // sunlit white in the harbour, storm-grey as she climbs into the weather
   h.near.inst.material.emissiveIntensity = 0.1 + 0.45 * fair;
   h.sea.inst.material.emissiveIntensity = 0.1 + 0.45 * fair;
@@ -910,7 +1321,6 @@ export function updateHarbour(world, camera, { dt, t, fair, lampsOn }) {
 
   for (const lantern of h.lanterns) lantern.material.emissiveIntensity = lampsOn ? 1.6 : 0.35;
   h.beacon.lamp.material.emissiveIntensity = 1 + Math.max(0, Math.sin(t * 2)) * 1.5;
-  void dt;
 }
 
 export { DOCK_SKY };

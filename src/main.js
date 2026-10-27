@@ -1774,7 +1774,7 @@ function loop() {
   rain.update(dt, settings.rain && sessionActive && inWorld && airborne, -game.sideSpeed() * DRIFT_METRES, fall);
   updateSky(dt);
   markShadows(now);
-  updateHarbour(world, camera, { dt, t, fair, lampsOn: state.lampsOn });
+  updateHarbour(world, camera, { dt, t, fair, lampsOn: state.lampsOn, sound: play });
   // The Blender dock swaps in its own lockers once it loads: paint those too.
   if (world.lockers !== paintedLockers) paintRoles();
   countFrame(now);
