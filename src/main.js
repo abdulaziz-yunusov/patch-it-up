@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { DRIFT_METRES, HELM_STANCE, SHIP, buildShip, addLights, addSky, applyRolePalette, applyState, groundHeight, hatchShut, takeoffProgress, updateHazards } from './world.js';
 import { loadDockModel, updateDock, resetDockEffects } from './dock.js';
+import { buildHarbour, updateHarbour } from './harbour.js';
 import { loadHelmModel, updateHelm, resetHelmEffects } from './helm.js';
 import { loadPowerModel, updatePower, resetPowerEffects } from './power.js';
 import { loadEngineModel, updateEngineRoom, resetEngineEffects } from './engine.js';
@@ -61,13 +62,32 @@ function pixelRatio(quality) {
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(pixelRatio(settings.quality));
+// A gentle tone curve keeps sunlit colours rich instead of blown out.
+renderer.toneMapping = THREE.NeutralToneMapping;
+renderer.toneMappingExposure = 1;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 document.body.prepend(renderer.domElement);
 
 const scene = new THREE.Scene();
 addSky(scene);
-addLights(scene);
+const lights = addLights(scene);
 
-const camera = new THREE.PerspectiveCamera(settings.fov, window.innerWidth / window.innerHeight, 0.1, 400);
+// Shadows by quality: none on Low, sharper on High.
+function applyShadowQuality() {
+  const on = settings.quality !== 'low';
+  renderer.shadowMap.enabled = on;
+  const size = settings.quality === 'high' ? 4096 : 2048;
+  const shadow = lights.harbourSun.shadow;
+  if (shadow.mapSize.x !== size) {
+    shadow.mapSize.set(size, size);
+    shadow.map?.dispose();
+    shadow.map = null;
+  }
+  scene.traverse((o) => o.material && (o.material.needsUpdate = true));
+}
+applyShadowQuality();
+
+const camera = new THREE.PerspectiveCamera(settings.fov, window.innerWidth / window.innerHeight, 0.1, 800);
 // PointerLockControls turns the camera as yaw then pitch; reading the angles
 // back only gives that pair if the euler is decomposed in the same order.
 camera.rotation.order = 'YXZ';
@@ -75,7 +95,13 @@ camera.rotation.order = 'YXZ';
 const world = buildShip();
 const ship = world.ship;
 scene.add(ship);
-loadDockModel(world); // swaps the coded dock for the Blender one when it arrives
+// The Blender dock replaces the coded one when it arrives, and the harbour
+// (island, scenery, sky) is built round it.
+loadDockModel(world).then((ok) => {
+  buildHarbour(world, scene, ok ? world.dock.getObjectByName('waitingRoom') : null);
+  // Get every new material ready now, not with a stutter on first sight.
+  renderer.compileAsync?.(scene, camera).catch(() => {});
+});
 loadHelmModel(world); // furnishes the pilot's cabin
 loadPowerModel(world); // furnishes the engineer's power room
 loadEngineModel(world); // furnishes the mechanic's engine room
@@ -1102,14 +1128,71 @@ const SKY = {
   burned: { color: new THREE.Color('#4a272c'), near: 14, far: 80 },
   landed: { color: new THREE.Color('#5d6599'), near: 40, far: 200 },
 };
+const storm = { color: new THREE.Color('#353a68'), near: 30, far: 160 };
+const HARBOUR = {
+  top: new THREE.Color('#3f8fe0'),
+  horizon: new THREE.Color('#cfe8fb'),
+  bottom: new THREE.Color('#eef5ff'),
+  fog: new THREE.Color('#cfe4f7'),
+  near: 35,
+  far: 290,
+};
+// How fair the weather is: 1 in the sunny harbour (the menu, the dock, a
+// landing coming in), 0 in the storm, in between on the way up or down.
+function fairWeather() {
+  if (!sessionActive || state.phase === 'lobby' || state.phase === 'gathering') return 1;
+  const landing = (state.phase === 'ending' && state.ending?.kind === 'landed') || (state.phase === 'result' && state.result === 'landed');
+  if (state.phase === 'takeoff' || landing) return 1 - takeoffProgress(state);
+  return 0;
+}
+let fair = 1;
+const HEMI = {
+  storm: { sky: new THREE.Color('#ffd9a0'), ground: new THREE.Color('#b5a493') },
+  fair: { sky: new THREE.Color('#f6ead6'), ground: new THREE.Color('#c9ac8c') },
+};
 function updateSky(dt) {
   const over = state.phase === 'ending' || state.phase === 'result';
   const to = (sessionActive && over && SKY[state.result]) || SKY.base;
   const k = Math.min(1, dt * 1.5);
-  scene.background.lerp(to.color, k);
-  scene.fog.color.copy(scene.background);
-  scene.fog.near += (to.near - scene.fog.near) * k;
-  scene.fog.far += (to.far - scene.fog.far) * k;
+  storm.color.lerp(to.color, k);
+  storm.near += (to.near - storm.near) * k;
+  storm.far += (to.far - storm.far) * k;
+  fair = fairWeather();
+  const dome = world.harbour?.dome.material.uniforms;
+  if (dome) {
+    dome.top.value.copy(storm.color).lerp(HARBOUR.top, fair);
+    dome.horizon.value.copy(storm.color).lerp(HARBOUR.horizon, fair);
+    dome.bottom.value.copy(storm.color).lerp(HARBOUR.bottom, fair);
+  }
+  scene.fog.color.copy(storm.color).lerp(HARBOUR.fog, fair);
+  scene.background.copy(scene.fog.color);
+  scene.fog.near = storm.near + (HARBOUR.near - storm.near) * fair;
+  scene.fog.far = storm.far + (HARBOUR.far - storm.far) * fair;
+  // In the harbour the sun does the work and the fill lights step back, so
+  // light and shade read; in the storm, the cabin's old lighting.
+  lights.harbourSun.intensity = 2.6 * fair;
+  lights.harbourSun.castShadow = fair > 0.02;
+  lights.sun.intensity = 1.3 - 0.6 * fair;
+  lights.hemi.intensity = 2.8 - 0.3 * fair;
+  lights.hemi.color.copy(HEMI.storm.sky).lerp(HEMI.fair.sky, fair);
+  lights.hemi.groundColor.copy(HEMI.storm.ground).lerp(HEMI.fair.ground, fair);
+}
+
+// Who throws a shadow: anything solid in the ship and on the dock (models
+// arrive late, so this looks again now and then). Glass, flames, glows
+// and labels do not; everything receives, so the roof shades the cabin.
+let shadowsCheckedAt = 0;
+function markShadows(now) {
+  if (now - shadowsCheckedAt < 2000) return;
+  shadowsCheckedAt = now;
+  ship.traverse((o) => {
+    if (!o.isMesh || o.userData.shadowSet) return;
+    o.userData.shadowSet = true;
+    const m = Array.isArray(o.material) ? o.material[0] : o.material;
+    const see = m && !m.transparent && !(m.emissiveIntensity > 0.5 && m.emissive?.getHex()) && o.geometry?.type !== 'PlaneGeometry';
+    o.castShadow = !!see;
+    o.receiveShadow = true;
+  });
 }
 
 // The music: calm at the menu and the dock, steady in the air, epic when
@@ -1690,6 +1773,8 @@ function loop() {
   const fall = RAIN_FALL - 70 * sinking;
   rain.update(dt, settings.rain && sessionActive && inWorld && airborne, -game.sideSpeed() * DRIFT_METRES, fall);
   updateSky(dt);
+  markShadows(now);
+  updateHarbour(world, camera, { dt, t, fair, lampsOn: state.lampsOn });
   // The Blender dock swaps in its own lockers once it loads: paint those too.
   if (world.lockers !== paintedLockers) paintRoles();
   countFrame(now);
@@ -1757,6 +1842,7 @@ function applySettings(key) {
     camera.updateProjectionMatrix();
   }
   if (all || key === 'quality') {
+    applyShadowQuality();
     renderer.setPixelRatio(pixelRatio(settings.quality));
     renderer.setSize(window.innerWidth, window.innerHeight);
   }
