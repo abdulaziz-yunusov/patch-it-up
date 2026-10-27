@@ -90,10 +90,30 @@ export function addSky(scene) {
 export function addLights(scene) {
   // The ground colour matters indoors: it is what lights the ceiling and
   // every downward face, and without it the hull reads as a cave.
-  scene.add(new THREE.HemisphereLight('#ffd9a0', '#b5a493', 2.8));
+  const hemi = new THREE.HemisphereLight('#ffd9a0', '#b5a493', 2.8);
+  scene.add(hemi);
   const sun = new THREE.DirectionalLight('#fff2d6', 1.3);
   sun.position.set(8, 12, 10);
   scene.add(sun);
+  // The harbour's sunshine: the one light that throws shadows, so the
+  // dock gets real light and shade while the cabin, roofed over, keeps the
+  // light it always had. Faded out in the storm (main.js).
+  const harbourSun = new THREE.DirectionalLight('#fff0d0', 2.4);
+  harbourSun.position.set(-25, 40, -42);
+  harbourSun.target.position.set(0, -1, -12);
+  harbourSun.castShadow = true;
+  const cam = harbourSun.shadow.camera;
+  cam.left = -26;
+  cam.right = 26;
+  cam.top = 26;
+  cam.bottom = -26;
+  cam.near = 5;
+  cam.far = 120;
+  harbourSun.shadow.bias = -0.0004;
+  harbourSun.shadow.normalBias = 0.03;
+  harbourSun.shadow.radius = 4;
+  scene.add(harbourSun, harbourSun.target);
+  return { hemi, sun, harbourSun };
 }
 
 // How high the floor is under a given spot. Flat ground was enough until
