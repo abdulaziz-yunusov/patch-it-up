@@ -1,4 +1,4 @@
-// The music: a calm tune at the dock, a steady one in the air, an epic one
+// The music: a title theme at the main menu, a calm tune at the dock, a steady one in the air, an epic one
 // when things go wrong, and a short sting for each ending. main.js says
 // which mood fits (setMood) and when an ending starts (sting); this file
 // fades between the loops and keeps them seamless.
@@ -14,7 +14,7 @@ import { onSettingsChange, settings } from './settings.js';
 
 const BASE = `${import.meta.env.BASE_URL}music/`;
 // Exact loop lengths, in seconds: whole bars, so the end meets the start.
-const LOOPS = { harbour: 77.142857, underway: 68.571429, storm: 53.333333 };
+const LOOPS = { title: 64.615385, harbour: 77.142857, underway: 68.571429, storm: 53.333333 };
 const STINGS = ['down', 'home'];
 const LEVEL = 0.8; // the whole mix, at 100% music
 const FADE_IN = 2.2; // seconds
@@ -22,9 +22,10 @@ const FADE_OUT = 1.6;
 const RESTART_AFTER = 25; // seconds of silence before the epic loop starts over from its top
 const DUCK = 0.5; // under a teammate's voice
 // Each track is fetched and decoded only when it may soon be wanted: the
-// menu needs the harbour tune alone, the dock the flight tune too, and
-// the flight the storm tune and the stings.
-const NEXT = { harbour: ['underway'], underway: ['storm', ...STINGS], storm: [...STINGS] };
+// menu needs its title theme (and the harbour tune, for when you join),
+// the dock the flight tune too, and the flight the storm tune and the
+// stings.
+const NEXT = { title: ['harbour'], harbour: ['underway'], underway: ['storm', ...STINGS], storm: [...STINGS] };
 
 const tracks = {}; // name -> { buffer, loading, gain, source, startedAt, offset, stopAt, silentSince }
 let ctx = null;

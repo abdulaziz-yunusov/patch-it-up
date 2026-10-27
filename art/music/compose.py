@@ -348,6 +348,61 @@ def home():
     return s, 6.0
 
 
+# ---------------------------------------------------------------------------
+# title: the main menu's theme. 4/4 at 104, F major. One unit = a quaver.
+# Harp and plucked strings set off, the celesta and flute sing the tune,
+# the horn takes the middle, and the strings join for the way home.
+
+def title():
+    s = Song(30 / 104)
+    HARP, PIZZ, STR, CELESTA, FLUTE, HORN, GLOCK, TIMP = 46, 45, 48, 8, 73, 60, 9, 47
+    intro = ['F', 'C', 'Dm', 'Bb']
+    a = ['F', 'C', 'Dm', 'Bb', 'F', 'C', 'Bb', 'C']
+    b = ['Dm', 'Bb', 'F', 'C', 'Dm', 'Bb', 'Gm', 'C']
+    bars = intro + a + b + a
+    tune = [('A4', 2), ('C5', 2), ('F5', 3), ('E5', 1), ('D5', 2), ('E5', 2), ('G5', 3), ('F5', 1),
+            ('F5', 2), ('E5', 2), ('D5', 2), ('C5', 2), ('D5', 6), ('C5', 2),
+            ('A4', 2), ('C5', 2), ('F5', 3), ('A5', 1), ('G5', 2), ('E5', 2), ('C5', 3), ('D5', 1),
+            ('F5', 2), ('D5', 2), ('Bb4', 2), ('D5', 2), ('E5', 4), ('C5', 4)]
+    tune2 = tune[:-2] + [('C5', 2), ('E5', 2), ('G5', 2), ('Bb5', 2)]
+    horn = [('A4', 4), ('D5', 4), ('F5', 6), ('D5', 2), ('C5', 4), ('A4', 4), ('G4', 6), ('C5', 2),
+            ('D5', 2), ('E5', 2), ('F5', 4), ('F5', 2), ('G5', 2), ('F5', 2), ('D5', 2), ('D5', 4), ('Bb4', 4),
+            ('C5', 4), ('E5', 2), ('G5', 2)]
+    for bar, name in enumerate(bars):
+        at = bar * 8
+        root, third = chord(name)
+        section = 0 if bar < 4 else 1 if bar < 12 else 2 if bar < 20 else 3
+        # harp: rising and falling arpeggio in quavers
+        h = place(root, 53, 65)
+        arp = [h, h + third, h + 7, h + 12, h + 12 + third, h + 12, h + 7, h + third]
+        for i, p in enumerate(arp):
+            s.note('harp', HARP, p, at + i, 1.8, 66 if i % 4 == 0 else 54)
+        # plucked bass on the beats
+        bass = place(root, 41, 53)
+        for i, p in enumerate([bass, bass + 7, bass + 12, bass + 7]):
+            s.note('pizz', PIZZ, p, at + i * 2, 1, 74 if i == 0 else 60)
+        if section >= 2:
+            v = place(root, 60, 72)
+            for p in (v, v + third, v + 7):
+                s.note('strings', STR, p, at, 8, 44 if section == 2 else 50)
+        if section == 2:
+            s.note('timp', TIMP, place(root, 41, 53), at, 1, 62)
+        # a soft tambourine on 2 and 4 once the tune is going
+        if section >= 1:
+            for i in (2, 6):
+                s.note('drums', 0, 54, at + i, 0.5, 34, drum=True)
+        if bar % 4 == 0:
+            s.note('glock', GLOCK, place(root, 84, 96), at, 2, 40)
+            s.note('glock', GLOCK, place(root, 84, 96) + 7, at + 1, 2, 34)
+    s.melody('celesta', CELESTA, tune, 4 * 8, 84)
+    s.melody('flute', FLUTE, tune, 4 * 8, 58, shift=-12)
+    s.melody('horn', HORN, horn, 12 * 8, 80)
+    s.melody('celesta', CELESTA, tune2, 20 * 8, 88)
+    s.melody('flute', FLUTE, tune2, 20 * 8, 64)
+    length = len(bars) * 8 * s.unit
+    return s, length
+
+
 if __name__ == '__main__':
     OUT.mkdir(parents=True, exist_ok=True)
     jobs = [
@@ -356,6 +411,7 @@ if __name__ == '__main__':
         ('storm', storm, True, -17),
         ('down', down, False, -18),
         ('home', home, False, -19),
+        ('title', title, True, -20),
     ]
     for name, build, loop, level in jobs:
         song, length = build()
