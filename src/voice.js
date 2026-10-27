@@ -15,7 +15,7 @@
 
 import { RULES } from './state.js';
 import { onSettingsChange, setSetting, settings } from './settings.js';
-import { audioContext, audioRunning, clearVoices, removeVoice, rmsDb, setVoice, setVoiceVolume, updateSpeaking, wakeAudio } from './audio.js';
+import { audioContext, audioRunning, clearVoices, loopbackDelay, receiveDelay, removeVoice, rmsDb, setVoice, setVoiceVolume, updateSpeaking, wakeAudio } from './audio.js';
 import { startPulse } from './pulse.js';
 import { play } from './sound.js';
 
@@ -487,6 +487,7 @@ async function onOffer(conn, msg) {
 // Joiner: which slot carries whose voice.
 function onMap(conn, map) {
   if (toHost?.conn !== conn || !map || typeof map !== 'object') return;
+  slotOwners = map;
   const heard = new Set();
   for (const transceiver of toHost.pc.getTransceivers()) {
     const id = map[transceiver.mid];
@@ -498,6 +499,69 @@ function onMap(conn, map) {
   knownVoices = heard;
 }
 let knownVoices = new Set(); // joiner: the voices the last map named
+let slotOwners = {}; // joiner: transceiver mid -> whose voice comes in it
+
+// --- how long a voice takes to arrive -------------------------------------------
+
+// The link a connection's audio travels on: round trip in ms, and whether
+// it goes through a relay server (TURN) rather than straight between the
+// two computers.
+async function linkInfo(pc) {
+  try {
+    const stats = await pc.getStats();
+    let pair = null;
+    stats.forEach((s) => {
+      if (s.type === 'transport' && s.selectedCandidatePairId) pair = stats.get(s.selectedCandidatePairId);
+    });
+    if (!pair) stats.forEach((s) => s.type === 'candidate-pair' && s.nominated && s.state === 'succeeded' && (pair = s));
+    if (!pair) return { rtt: null, relayed: false };
+    const local = stats.get(pair.localCandidateId);
+    const remote = stats.get(pair.remoteCandidateId);
+    return {
+      rtt: pair.currentRoundTripTime != null ? Math.round(pair.currentRoundTripTime * 1000) : null,
+      relayed: local?.candidateType === 'relay' || remote?.candidateType === 'relay',
+    };
+  } catch {
+    return { rtt: null, relayed: false };
+  }
+}
+
+const OPUS_MS = 20; // one Opus frame, filled before it can be sent
+const CODEC_MS = 2 * OPUS_MS; // a frame to fill, about a frame of decoding and output
+
+// For the settings page: each teammate whose voice reaches us, and roughly
+// how long it takes, in parts: [{ id, total, network, buffer, detour,
+// relayed, viaHost, hostHop }]. Ms; null where not known (yet).
+export async function voiceDelays() {
+  const detour = await loopbackDelay();
+  const detourMs = detour == null ? 0 : detour + CODEC_MS;
+  const rows = [];
+  const row = (id, link, buffer, extra = {}) => {
+    const network = link.rtt == null ? null : Math.round(link.rtt / 2);
+    const parts = [network, buffer];
+    const total = parts.every((v) => v != null) ? network + buffer + CODEC_MS + detourMs + (extra.hostHop ?? 0) : null;
+    rows.push({ id, total, network, buffer, detour: detour == null ? null : detourMs, relayed: link.relayed, viaHost: false, hostHop: null, ...extra });
+  };
+  for (const link of hostLinks.values()) {
+    if (!link.ready) continue;
+    row(link.id, await linkInfo(link.pc), await receiveDelay(link.duplex.receiver));
+  }
+  if (toHost?.pc) {
+    const link = await linkInfo(toHost.pc);
+    for (const transceiver of toHost.pc.getTransceivers()) {
+      const id = slotOwners[transceiver.mid];
+      if (typeof id !== 'string') continue;
+      const buffer = await receiveDelay(transceiver.receiver);
+      // Another joiner's voice comes through the host: their link to the
+      // host, the host's buffer and its re-encoding come on top (unseen
+      // from here: counted as one more hop like ours).
+      const viaHost = id !== 'host';
+      const hostHop = viaHost && link.rtt != null && buffer != null ? Math.round(link.rtt / 2) + buffer + CODEC_MS : null;
+      row(id, link, buffer, viaHost ? { viaHost, hostHop } : {});
+    }
+  }
+  return rows;
+}
 
 // Back at the menu: every line and voice goes (the mic is stopped apart).
 export function endVoice() {

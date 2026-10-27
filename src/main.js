@@ -43,7 +43,7 @@ import { totalStars } from './log.js';
 import { showResult } from './results.js';
 import { duckMusic, musicState, setMood, sting, updateMusic } from './music.js';
 import { resetSubtitles, updateSubtitles } from './subtitles.js';
-import { endVoice, handleSignal, hostLink, hostUnlink, initVoice, micState, startMic, stopMic, voiceStatus } from './voice.js';
+import { voiceDelays, endVoice, handleSignal, hostLink, hostUnlink, initVoice, micState, startMic, stopMic, voiceStatus } from './voice.js';
 import { hasVoice, isSpeaking, outputRoute, placeVoices } from './audio.js';
 import { initVoiceUi, updateVoiceUi } from './voiceUi.js';
 import { clearJobList, coveredRoles, jobsFor, updateJobList } from './jobs.js';
@@ -1790,7 +1790,7 @@ if (import.meta.env.DEV) {
   window.patch = {
     scene, camera, ship, world, player, crew, view,
     state, local, net, game, bodies, inputs, RULES, THREE, hostInteractions, renderer,
-    voice: { voiceStatus, isSpeaking, hasVoice, micState, outputRoute },
+    voice: { voiceStatus, isSpeaking, hasVoice, micState, outputRoute, voiceDelays },
     music: musicState,
   };
 }

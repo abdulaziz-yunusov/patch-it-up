@@ -497,6 +497,20 @@
                 </div>
                 <input id="set-voice3d" type="checkbox" class="set-check" data-setting="voice3d" />
               </div>
+              <div class="set-row">
+                <div class="set-text">
+                  <label for="set-headphones" class="set-label">I'm wearing headphones</label>
+                  <span class="set-sub">Chrome and Edge: voices and music skip the echo filter, so voices arrive sooner. Leave it off with speakers, or the crew hears themselves back.</span>
+                </div>
+                <input id="set-headphones" type="checkbox" class="set-check" data-setting="headphones" />
+              </div>
+              <div id="voiceDelayRow" class="set-row" hidden>
+                <div class="set-text">
+                  <span class="set-label">Voice delay</span>
+                  <span class="set-sub">Roughly how long each teammate's voice takes to reach you, and where the time goes.</span>
+                  <ul id="voiceDelay" class="voice-delay"></ul>
+                </div>
+              </div>
             </section>
 
             <section id="pane-controls" class="pane" role="tabpanel" aria-labelledby="tab-controls" hidden>

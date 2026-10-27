@@ -67,6 +67,7 @@ const SPEC = {
   micSensitivity: { def: 50, check: range(0, 100) }, // how quiet a voice still opens the mic; 100 = always open
   micMuted: { def: false, check: bool },
   voice3d: { def: true, check: bool }, // voices come from where people stand
+  headphones: { def: false, check: bool }, // no echo to cancel: voices skip Chrome's detour, less delay
   sensitivity: { def: 50, check: range(0, 100) },
   invertY: { def: false, check: bool },
   fov: { def: 80, check: range(60, 100) },

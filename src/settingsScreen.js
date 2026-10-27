@@ -5,7 +5,8 @@
 
 import { ACTIONS, bindKey, isReserved, keyLabel, onSettingsChange, resetSettings, setSetting, settings } from './settings.js';
 import { play } from './sound.js';
-import { listMics, onVoiceChange, startMic } from './voice.js';
+import { listMics, onVoiceChange, startMic, voiceDelays } from './voice.js';
+import { state } from './state.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -21,6 +22,34 @@ let opener = null; // focus goes back here when the page closes
 let onClosed = null;
 let listening = null; // the action waiting for a key, while rebinding
 let resetArmed = 0; // until when a second click on Reset counts
+
+// --- the voice delay readout -------------------------------------------------
+
+let delayTimer = 0;
+async function drawDelays() {
+  const rows = await voiceDelays().catch(() => []);
+  const list = $('voiceDelay');
+  $('voiceDelayRow').hidden = rows.length === 0;
+  list.replaceChildren(
+    ...rows.map((r) => {
+      const li = document.createElement('li');
+      const name = state.players[r.id]?.name ?? (r.id === 'host' ? 'The host' : 'Teammate');
+      const head = document.createElement('strong');
+      head.textContent = r.total == null ? `${name}: measuring...` : `${name}: about ${r.total} ms`;
+      head.className = r.total > 400 ? 'slow' : r.total > 200 ? 'meh' : 'fine';
+      const parts = [
+        r.network != null && `network ${r.network} ms${r.relayed ? ' (through a relay server)' : ''}`,
+        r.buffer != null && `buffer ${r.buffer} ms`,
+        r.detour ? `echo filter ${r.detour} ms` : null,
+        r.viaHost && (r.hostHop != null ? `passed on by the host ~${r.hostHop} ms` : 'passed on by the host'),
+      ].filter(Boolean);
+      const detail = document.createElement('span');
+      detail.textContent = parts.join(' · ');
+      li.append(head, detail);
+      return li;
+    })
+  );
+}
 
 export function isSettingsOpen() {
   return overlay && !overlay.hidden;
@@ -119,6 +148,9 @@ export function openSettings(whenClosed = null) {
   $('bindNote').textContent = '';
   overlay.hidden = false;
   drawAll();
+  clearInterval(delayTimer);
+  delayTimer = setInterval(drawDelays, 1000);
+  drawDelays();
   fillMics();
   showTab(tab);
   $(`tab-${tab}`).focus();
@@ -126,6 +158,7 @@ export function openSettings(whenClosed = null) {
 
 export function closeSettings() {
   stopListening();
+  clearInterval(delayTimer);
   overlay.hidden = true;
   if (opener && document.contains(opener)) opener.focus();
   const done = onClosed;
