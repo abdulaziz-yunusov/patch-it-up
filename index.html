@@ -8,8 +8,8 @@
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><ellipse cx='16' cy='13' rx='11' ry='8' fill='%23c86a33'/><rect x='8' y='21' width='16' height='6' rx='1' fill='%238a5a36'/></svg>"
     />
-    <script type="module" crossorigin src="/patch-it-up/assets/index-DX9JYiK1.js"></script>
-    <link rel="stylesheet" crossorigin href="/patch-it-up/assets/index-Bmg2sRHW.css">
+    <script type="module" crossorigin src="/patch-it-up/assets/index-BCmlQaB3.js"></script>
+    <link rel="stylesheet" crossorigin href="/patch-it-up/assets/index-CE3ADUqA.css">
   </head>
   <body>
     <!-- One 3D canvas lives behind these screens; only one screen shows at a time. -->
@@ -497,6 +497,20 @@
                   <span class="set-sub">Left and right, near and far, muffled through bulkheads.</span>
                 </div>
                 <input id="set-voice3d" type="checkbox" class="set-check" data-setting="voice3d" />
+              </div>
+              <div class="set-row">
+                <div class="set-text">
+                  <label for="set-headphones" class="set-label">I'm wearing headphones</label>
+                  <span class="set-sub">Chrome and Edge: voices and music skip the echo filter, so voices arrive sooner. Leave it off with speakers, or the crew hears themselves back.</span>
+                </div>
+                <input id="set-headphones" type="checkbox" class="set-check" data-setting="headphones" />
+              </div>
+              <div id="voiceDelayRow" class="set-row" hidden>
+                <div class="set-text">
+                  <span class="set-label">Voice delay</span>
+                  <span class="set-sub">Roughly how long each teammate's voice takes to reach you, and where the time goes.</span>
+                  <ul id="voiceDelay" class="voice-delay"></ul>
+                </div>
               </div>
             </section>
 
