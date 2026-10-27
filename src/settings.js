@@ -60,6 +60,7 @@ const text = (max) => (v) => (typeof v === 'string' && v.length <= max ? v : und
 const SPEC = {
   master: { def: 80, check: range(0, 100) },
   sfx: { def: 90, check: range(0, 100) },
+  music: { def: 60, check: range(0, 100) },
   voices: { def: 100, check: range(0, 100) }, // teammates' voices
   micId: { def: '', check: text(300) }, // '' follows the system's default microphone
   voiceMode: { def: 'open', check: oneOf('open', 'ptt') }, // open mic, or push-to-talk

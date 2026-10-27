@@ -41,6 +41,7 @@ import { FALL as RAIN_FALL, createRain } from './rain.js';
 import { buildPirates, lastPirateHit, resetPirateEffects, updatePirates } from './pirates.js';
 import { totalStars } from './log.js';
 import { showResult } from './results.js';
+import { duckMusic, musicState, setMood, sting, updateMusic } from './music.js';
 import { resetSubtitles, updateSubtitles } from './subtitles.js';
 import { endVoice, handleSignal, hostLink, hostUnlink, initVoice, micState, startMic, stopMic, voiceStatus } from './voice.js';
 import { hasVoice, isSpeaking, outputRoute, placeVoices } from './audio.js';
@@ -1060,7 +1061,10 @@ function updateEnding(now) {
   endingScreen.classList.toggle('home', end.kind === 'landed');
   endingScreen.classList.toggle('crash', now - endJolt < 450);
 
-  if (endingCues.flight !== state.flight) endingCues = { flight: state.flight, next: 0 };
+  if (endingCues.flight !== state.flight) {
+    endingCues = { flight: state.flight, next: 0 };
+    if (end.t < 1) sting(end.kind === 'landed' ? 'home' : 'down');
+  }
   const cues = ENDING_CUES[end.kind] ?? [];
   while (endingCues.next < cues.length && end.t >= cues[endingCues.next].at) {
     const cue = cues[endingCues.next++];
@@ -1106,6 +1110,46 @@ function updateSky(dt) {
   scene.fog.color.copy(scene.background);
   scene.fog.near += (to.near - scene.fog.near) * k;
   scene.fog.far += (to.far - scene.fog.far) * k;
+}
+
+// The music: calm at the menu and the dock, steady in the air, epic when
+// it goes wrong (a storm wall coming, pirates, fire, the ship low). The
+// epic tune holds a while after the danger passes, so it doesn't flicker.
+// Silence for the ending's sting, then the harbour tune again.
+const DANGER_HOLD_MS = 9000;
+const AFTER_STING_MS = 3500;
+let dangerUntil = 0;
+let musicPhase = null;
+let musicPhaseSince = 0;
+function musicMood(now) {
+  if (!sessionActive) return 'harbour';
+  const phase = state.phase;
+  if (phase !== musicPhase) {
+    musicPhase = phase;
+    musicPhaseSince = now;
+  }
+  if (phase !== 'flight') dangerUntil = 0;
+  if (phase === 'ending') return null;
+  if (phase === 'result') return now - musicPhaseSince > AFTER_STING_MS ? 'harbour' : null;
+  if (phase === 'takeoff') return 'underway';
+  if (phase !== 'flight') return 'harbour';
+  if (trainingActive()) return 'underway';
+  const raid = state.raid?.phase;
+  const danger =
+    state.storm?.active ||
+    raid === 'sighted' ||
+    raid === 'alongside' ||
+    Object.values(state.fires ?? {}).some(Boolean) ||
+    state.altitude < 25;
+  if (danger) dangerUntil = now + DANGER_HOLD_MS;
+  return now < dangerUntil ? 'storm' : 'underway';
+}
+
+function updateMusicNow(now) {
+  setMood(musicMood(now), { fast: state.phase === 'ending' });
+  // Down under a teammate's voice, so the crew can hear each other.
+  duckMusic(sessionActive && Object.keys(state.players).some((id) => id !== local.id && isSpeaking(id, now)));
+  updateMusic();
 }
 
 // The climb: what is happening, then your job, then a last call.
@@ -1630,6 +1674,7 @@ function loop() {
     orbitShip(t);
   }
   if (sessionActive) placeCrewVoices(now);
+  updateMusicNow(now);
   updateVoiceUi(now, {
     players: state.players,
     localId: local.id,
@@ -1746,6 +1791,7 @@ if (import.meta.env.DEV) {
     scene, camera, ship, world, player, crew, view,
     state, local, net, game, bodies, inputs, RULES, THREE, hostInteractions, renderer,
     voice: { voiceStatus, isSpeaking, hasVoice, micState, outputRoute },
+    music: musicState,
   };
 }
 
