@@ -2,10 +2,10 @@
 // Replace with Blender .glb models later (public/models/).
 
 import * as THREE from 'three';
-import { RULES } from './state.js';
+import { KIT_HOME, RULES } from './state.js';
 
 export const SHIP = {
-  length: 24, // x: -12 .. 12
+  length: 30, // x: -15 .. 15: three rooms of 10 m
   width: 6, // z: -3 .. 3
   wallHeight: 3,
   doorWidth: 1.5,
@@ -15,6 +15,19 @@ export const SHIP = {
 
 // The dock lies off the port side. While the ship is moored it does not
 // rock, so dock and ship share one set of coordinates.
+// The bulkheads stand this far either side of the middle: the power room
+// is 2 x ROOM_HALF long, and the engine room and helm fill the rest.
+export const ROOM_HALF = 5;
+
+// The Blender rooms were built for 8 m rooms (the ship was 24 m); each
+// is now 10 m. Where each was built, and where it stands now (rooms.js
+// fits each piece of furniture to its wall as the model loads).
+export const ROOM_STRETCH = {
+  engine: { from: [-12, -4], to: [-15, -5] },
+  power: { from: [-4, 4], to: [-5, 5] },
+  helm: { from: [4, 12], to: [5, 15] },
+};
+
 export const DOCK = {
   length: 20, // x: -10 .. 10
   width: 10, // z: -15 .. -5
@@ -27,7 +40,7 @@ export const DOCK = {
 export const GANGPLANK = { halfWidth: 1, zFoot: -5, zTop: -3 };
 
 // Where the pilot stands when they take the wheel: one stride behind it.
-export const HELM_STANCE = { x: 8.9, z: 0, look: -Math.PI / 2 };
+export const HELM_STANCE = { x: 11.9, z: 0, look: -Math.PI / 2 }; // the wheel stands 1.5 m ahead, just short of the dashboard
 
 // One unit of drift (state.drift, -1 .. 1) is this many metres sideways:
 // the rock, the rain and the helm gauge all slide on this one scale.
@@ -42,33 +55,33 @@ const TUBE = { min: 0.4, max: 2, size: 0.4, z: 2.4, xs: [-1.2, 0, 1.2] };
 
 // floor = a muted inlay underfoot, color = the bright stripe along the walls.
 export const ROOMS = [
-  { id: 'engine', name: 'Engine room', x: -8, color: '#e2574c', floor: '#8e4039' },
+  { id: 'engine', name: 'Engine room', x: -10, color: '#e2574c', floor: '#8e4039' },
   { id: 'power', name: 'Power room', x: 0, color: '#49b97a', floor: '#2f6e4f' },
-  { id: 'helm', name: 'Helm', x: 8, color: '#4a86e8', floor: '#35548e' },
+  { id: 'helm', name: 'Helm', x: 10, color: '#4a86e8', floor: '#35548e' },
 ];
 
 // Where the hull can spring a leak: three spots in each room, clear of
 // the stations and of the cargo doorway. The host opens them one at a
 // time during a flight.
 export const BREACH_SPOTS = [
-  { id: 'e0', room: 'engine', x: -9.5, z: 1.9 },
-  { id: 'e1', room: 'engine', x: -6.5, z: 1.6 },
-  { id: 'e2', room: 'engine', x: -10.5, z: -1.5 },
+  { id: 'e0', room: 'engine', x: -11.5, z: 1.9 },
+  { id: 'e1', room: 'engine', x: -8.5, z: 1.6 },
+  { id: 'e2', room: 'engine', x: -12.5, z: -1.5 },
   { id: 'p0', room: 'power', x: -2.6, z: 1.6 },
   { id: 'p1', room: 'power', x: 2.6, z: -1.6 },
   { id: 'p2', room: 'power', x: 0.2, z: 0.6 },
-  { id: 'h0', room: 'helm', x: 6.2, z: 1.8 },
-  { id: 'h1', room: 'helm', x: 9.5, z: -1.8 },
-  { id: 'h2', room: 'helm', x: 7, z: -1.2 },
+  { id: 'h0', room: 'helm', x: 8.2, z: 1.8 },
+  { id: 'h1', room: 'helm', x: 11.5, z: -1.8 },
+  { id: 'h2', room: 'helm', x: 9, z: -1.2 },
 ];
 
 // Where a pirate grapple can bite: one spot per room on each side wall, at
 // head height, on bare wall clear of the furniture and the cargo door.
 // port is the -z wall, starboard the +z one.
 export const HOOK_SPOTS = [
-  { room: 'engine', port: -10.2, starboard: -9.3 },
+  { room: 'engine', port: -12.2, starboard: -11.3 },
   { room: 'power', port: -2.6, starboard: -1.9 },
-  { room: 'helm', port: 8.2, starboard: 6.4 },
+  { room: 'helm', port: 10.2, starboard: 8.4 },
 ];
 export const HOOK_HEIGHT = 1.8;
 export const hookX = (spot, side) => (side > 0 ? HOOK_SPOTS[spot].starboard : HOOK_SPOTS[spot].port);
@@ -90,7 +103,7 @@ export function addSky(scene) {
 export function addLights(scene) {
   // The ground colour matters indoors: it is what lights the ceiling and
   // every downward face, and without it the hull reads as a cave.
-  const hemi = new THREE.HemisphereLight('#ffd9a0', '#b5a493', 2.8);
+  const hemi = new THREE.HemisphereLight('#ffe6c6', '#7d5f4a', 2.6);
   scene.add(hemi);
   const sun = new THREE.DirectionalLight('#fff2d6', 1.3);
   sun.position.set(8, 12, 10);
@@ -209,7 +222,7 @@ export function buildShip() {
   );
 
   // Two inner walls, each with a door gap you can walk through.
-  for (const x of [-4, 4]) {
+  for (const x of [-ROOM_HALF, ROOM_HALF]) {
     const side = (width - doorWidth) / 2;
     for (const sign of [-1, 1]) {
       solid(box(thickness, wallHeight, side), wood, x, wallHeight / 2, sign * (doorWidth / 2 + side / 2));
@@ -224,9 +237,9 @@ export function buildShip() {
     const accent = new THREE.MeshStandardMaterial({ color: room.color, flatShading: true });
     const inlay = new THREE.MeshStandardMaterial({ color: room.floor, flatShading: true });
     roomMaterials[room.id] = { accent, inlay };
-    part(box(7.4, 0.06, 5.4), inlay, room.x, 0.03, 0);
+    part(box(2 * ROOM_HALF - 0.6, 0.06, 5.4), inlay, room.x, 0.03, 0);
     for (const z of [-width / 2, width / 2]) {
-      part(box(7.4, 0.22, 0.06), accent, room.x, 2.55, z - Math.sign(z) * 0.08);
+      part(box(2 * ROOM_HALF - 0.6, 0.22, 0.06), accent, room.x, 2.55, z - Math.sign(z) * 0.08);
     }
   }
 
@@ -241,7 +254,7 @@ export function buildShip() {
     9,
     0
   );
-  balloon.scale.set(14, 4, 5);
+  balloon.scale.set(14 * (length / 24), 4, 5); // as long as the hull asks
 
   // The rock the pilot dodges, waiting out of sight until one is thrown.
   const rock = part(
@@ -265,6 +278,7 @@ export function buildShip() {
     fires,
     storm,
     roomMaterials,
+    hullMaterials: { wood, deck, metal },
     colliders,
     breaches,
     hatch,
@@ -312,9 +326,9 @@ const CLIMB = { drop: 45, slide: 14 };
 // Where a fire burns in each room: on open floor, clear of the stations
 // and of the breach spots.
 export const FIRE_SPOTS = {
-  engine: { x: -9.6, z: 0.3 },
+  engine: { x: -11.6, z: 0.3 },
   power: { x: -2.2, z: -1.0 },
-  helm: { x: 7.6, z: 0.9 },
+  helm: { x: 9.6, z: 0.9 },
 };
 
 // A fire: three flame cones, a flickering light, and an invisible column
@@ -521,11 +535,11 @@ function buildStations(ship, colliders, solid, box, metal) {
   const brass = new THREE.MeshStandardMaterial({ color: '#b9892f', flatShading: true });
 
   // Engine room: the engine block, the furnace, and the mechanic's kit.
-  solid(box(2.2, 1.8, 2), metal, -8, 0.9, -1.8).name = 'engine';
-  solid(box(0.7, 0.7, 0.7), orange, -6.2, 0.35, -2.2).name = 'furnace';
+  solid(box(2.2, 1.8, 2), metal, -10, 0.9, -1.8).name = 'engine';
+  solid(box(0.7, 0.7, 0.7), orange, -8.2, 0.35, -2.2).name = 'furnace';
 
   const kit = new THREE.Mesh(box(0.36, 0.3, 0.26), orange);
-  kit.position.set(-6.6, 0.15, 1.6);
+  kit.position.set(KIT_HOME.x, KIT_HOME.y, KIT_HOME.z);
   kit.name = 'patchKit';
   kit.userData.interact = { label: 'Pick up patch kit', role: 'mechanic', action: 'pickup' };
   ship.add(kit);
@@ -591,7 +605,7 @@ function buildStations(ship, colliders, solid, box, metal) {
   // low, below the pilot's sightline, or it hides the one rock that is
   // lined up to hit - the one they most need to see.
   const wheelMount = new THREE.Group();
-  wheelMount.position.set(10.4, 1, 0);
+  wheelMount.position.set(HELM_STANCE.x + 1.5, 1, 0);
   wheelMount.rotation.z = Math.PI / 2; // tip the disc upright, facing the bow
   wheelMount.name = 'wheel';
   wheelMount.userData.interact = { label: 'Take the wheel', role: 'pilot', action: 'wheel' };
@@ -620,7 +634,7 @@ function buildStations(ship, colliders, solid, box, metal) {
   // taken and left through an invisible pane at eye height. Three still
   // raycasts meshes it does not draw, and nothing is hidden behind it.
   const helmStation = new THREE.Mesh(box(0.1, 0.9, 1.4), brass);
-  helmStation.position.set(10.4, 1.7, 0);
+  helmStation.position.set(HELM_STANCE.x + 1.5, 1.7, 0);
   helmStation.name = 'helmStation';
   helmStation.visible = false;
   helmStation.userData.interact = wheelMount.userData.interact; // one label, two targets

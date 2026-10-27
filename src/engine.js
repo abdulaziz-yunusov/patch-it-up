@@ -20,6 +20,7 @@ import * as THREE from 'three';
 import { RULES, livePower } from './state.js';
 import { play } from './sound.js';
 import { loadRoom } from './rooms.js';
+import { ROOM_STRETCH } from './world.js';
 
 const STATIONS = {
   stoke: { label: 'Stoke the furnace', action: 'stoke', role: 'mechanic', hold: RULES.stokeSeconds },
@@ -31,6 +32,7 @@ export async function loadEngineModel(world) {
   const room = await loadRoom(world, {
     url: `${import.meta.env.BASE_URL}models/engine_room.glb`,
     name: 'engineRoom',
+    stretch: ROOM_STRETCH.engine,
     stations: STATIONS,
     // The supply rack is many pieces; one box for the lot.
     groups: [/^(supply_|col_supply)/],

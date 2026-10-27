@@ -5,6 +5,8 @@ import * as THREE from 'three';
 import { DRIFT_METRES, HELM_STANCE, SHIP, buildShip, addLights, addSky, applyRolePalette, applyState, groundHeight, hatchShut, takeoffProgress, updateHazards } from './world.js';
 import { loadDockModel, updateDock, resetDockEffects } from './dock.js';
 import { buildHarbour, updateHarbour } from './harbour.js';
+import { dressCabin, updateCabin } from './cabin.js';
+import { styleInterior } from './interior.js';
 import { loadHelmModel, updateHelm, resetHelmEffects } from './helm.js';
 import { loadPowerModel, updatePower, resetPowerEffects } from './power.js';
 import { loadEngineModel, updateEngineRoom, resetEngineEffects } from './engine.js';
@@ -105,6 +107,8 @@ loadDockModel(world).then((ok) => {
 loadHelmModel(world); // furnishes the pilot's cabin
 loadPowerModel(world); // furnishes the engineer's power room
 loadEngineModel(world); // furnishes the mechanic's engine room
+styleInterior(world); // planks, trim and panelling on the hull
+dressCabin(world); // ribs, pipes, gauges, cables, portholes, books: the rooms' details
 buildPirates(world); // the sky pirates' ship, crew, grapples and boarders
 
 const player = new LocalPlayer({ ship, camera, colliders: world.colliders });
@@ -1147,7 +1151,9 @@ function fairWeather() {
 }
 let fair = 1;
 const HEMI = {
-  storm: { sky: new THREE.Color('#ffd9a0'), ground: new THREE.Color('#b5a493') },
+  // a warm white from above and a darker bounce from below, so ceilings
+  // and the undersides of things fall into shade and the rooms have depth
+  storm: { sky: new THREE.Color('#ffe6c6'), ground: new THREE.Color('#7d5f4a') },
   fair: { sky: new THREE.Color('#f6ead6'), ground: new THREE.Color('#c9ac8c') },
 };
 function updateSky(dt) {
@@ -1173,7 +1179,7 @@ function updateSky(dt) {
   lights.harbourSun.intensity = 2.6 * fair;
   lights.harbourSun.castShadow = fair > 0.02;
   lights.sun.intensity = 1.3 - 0.6 * fair;
-  lights.hemi.intensity = 2.8 - 0.3 * fair;
+  lights.hemi.intensity = 2.6 - 0.3 * fair;
   lights.hemi.color.copy(HEMI.storm.sky).lerp(HEMI.fair.sky, fair);
   lights.hemi.groundColor.copy(HEMI.storm.ground).lerp(HEMI.fair.ground, fair);
 }
@@ -1775,6 +1781,7 @@ function loop() {
   updateSky(dt);
   markShadows(now);
   updateHarbour(world, camera, { dt, t, fair, lampsOn: state.lampsOn, sound: play });
+  updateCabin(world, { t, dt, fair, power: livePower(0) });
   // The Blender dock swaps in its own lockers once it loads: paint those too.
   if (world.lockers !== paintedLockers) paintRoles();
   countFrame(now);

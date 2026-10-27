@@ -21,7 +21,7 @@ const SHIP_URL = `${import.meta.env.BASE_URL}models/pirate_ship.glb`;
 // Where their ship holds station, in our ship's space: ahead and off to
 // one side, far enough out that its hull clears ours, near enough to the
 // bow that the helm sees it through the window.
-const ALONGSIDE = { x: 23, z: 8, y: -0.6 };
+const ALONGSIDE = { x: SHIP.length / 2 + 11, z: 8, y: -0.6 };
 const SIGHTED_FROM = { x: 150, z: 32 }; // out of the fog
 const RAIL = { x: [-2, 1, 4], z: 2.5, y: 0.9 }; // where their grapple lines leave the rail
 
@@ -396,7 +396,7 @@ function fire(pir, raid, blocked, now) {
     : new THREE.Vector3(0, 0.5, -raid.side * 2.6);
   pir.holder.updateMatrix();
   const from = local.applyMatrix4(pir.holder.matrix); // in our ship's space, like everything here
-  const to = new THREE.Vector3(-8 + Math.random() * 16, 1.2, raid.side * (SHIP.width / 2 + 0.3));
+  const to = new THREE.Vector3((Math.random() - 0.5) * (SHIP.length - 8), 1.2, raid.side * (SHIP.width / 2 + 0.3));
   puff(pir, from, { color: '#ffb347', size: 0.5, grow: [0.6, 2.2], life: 220, fade: 1, now });
   puff(pir, from, { color: '#8a8580', size: 0.7, grow: [0.8, 3.5], life: 1300, fade: 0.6, now });
   const ball = new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 8), new THREE.MeshStandardMaterial({ color: '#1d1b22' }));

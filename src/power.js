@@ -19,6 +19,7 @@ import * as THREE from 'three';
 import { RULES, livePower } from './state.js';
 import { play } from './sound.js';
 import { loadRoom } from './rooms.js';
+import { ROOM_STRETCH } from './world.js';
 
 const STATIONS = {
   steam: { label: 'Vent the tubes (hold)', action: 'steam', role: 'engineer', hold: RULES.ventSeconds },
@@ -31,6 +32,7 @@ export async function loadPowerModel(world) {
   const room = await loadRoom(world, {
     url: `${import.meta.env.BASE_URL}models/power_room.glb`,
     name: 'powerRoom',
+    stretch: ROOM_STRETCH.power,
     stations: STATIONS,
     // The dynamo is one solid lump: base, housing and flywheel together.
     groups: [/^(col_dynamo|dynamo_housing|dynamo_endcap|flywheel_)/],

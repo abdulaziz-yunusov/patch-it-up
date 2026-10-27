@@ -17,7 +17,7 @@ import { DOCK } from './world.js';
 
 // --- small helpers -----------------------------------------------------------
 
-function seeded(seed) {
+export function seeded(seed) {
   let s = seed >>> 0;
   return () => {
     s = (s + 0x6d2b79f5) >>> 0;
@@ -29,7 +29,7 @@ function seeded(seed) {
 }
 
 const mats = new Map();
-function paint(color, { rough = 0.85, flat = false, emissive = null, glow = 0, side = THREE.FrontSide, vertex = false } = {}) {
+export function paint(color, { rough = 0.85, flat = false, emissive = null, glow = 0, side = THREE.FrontSide, vertex = false } = {}) {
   const key = [color, rough, flat, emissive, glow, side, vertex].join('|');
   if (!mats.has(key)) {
     mats.set(
@@ -49,7 +49,7 @@ function paint(color, { rough = 0.85, flat = false, emissive = null, glow = 0, s
   return mats.get(key);
 }
 
-function mesh(geometry, material, x = 0, y = 0, z = 0, { shadow = true } = {}) {
+export function mesh(geometry, material, x = 0, y = 0, z = 0, { shadow = true } = {}) {
   const m = new THREE.Mesh(geometry, material);
   m.position.set(x, y, z);
   m.castShadow = shadow;
@@ -61,7 +61,7 @@ function mesh(geometry, material, x = 0, y = 0, z = 0, { shadow = true } = {}) {
 
 // A warm wood grain to multiply over plank colours.
 let grain = null;
-function woodGrain() {
+export function woodGrain() {
   if (grain) return grain;
   const canvas = document.createElement('canvas');
   canvas.width = 64;
@@ -384,7 +384,7 @@ function lifeRing() {
   return g;
 }
 
-function crate(size, color = '#c8925a') {
+export function crate(size, color = '#c8925a') {
   const g = new THREE.Group();
   g.add(mesh(new RoundedBoxGeometry(size, size, size, 2, size * 0.06), paint(color), 0, size / 2, 0));
   const band = paint('#8a5a35');
@@ -393,7 +393,7 @@ function crate(size, color = '#c8925a') {
   return g;
 }
 
-function barrel(height, color = '#b3713f') {
+export function barrel(height, color = '#b3713f') {
   const g = new THREE.Group();
   const body = new THREE.CylinderGeometry(height * 0.32, height * 0.32, height, 14, 4);
   const p = body.attributes.position;
@@ -802,7 +802,7 @@ export function buildHarbour(world, scene, model) {
   return world.harbour;
 }
 
-function bake(root, keep) {
+export function bake(root, keep) {
   root.updateMatrixWorld(true);
   const inverse = root.matrixWorld.clone().invert();
   const buckets = new Map(); // material -> { geometries, cast }

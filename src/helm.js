@@ -21,6 +21,7 @@ import { settings } from './settings.js';
 import { play } from './sound.js';
 import { toast } from './dock.js';
 import { loadRoom, pivotAt } from './rooms.js';
+import { ROOM_STRETCH } from './world.js';
 
 const STATIONS = {
   bell: { label: 'Ring the cabin bell', action: 'cabinBell' },
@@ -32,6 +33,7 @@ export async function loadHelmModel(world) {
   const room = await loadRoom(world, {
     url: `${import.meta.env.BASE_URL}models/helm_room.glb`,
     name: 'helmCabin',
+    stretch: ROOM_STRETCH.helm,
     stations: STATIONS,
     groups: [/^(shelf_|col_shelf)/], // shelves are many little pieces; one box for the lot
     solid: ['station_telescope'],
