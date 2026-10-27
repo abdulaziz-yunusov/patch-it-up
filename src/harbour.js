@@ -928,16 +928,19 @@ function badgeTexture(role) {
 
 function nameTexture(text) {
   const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 112;
+  canvas.width = 640;
+  canvas.height = 120;
   const g = canvas.getContext('2d');
   g.fillStyle = '#3b2516';
-  g.fillRect(0, 0, 512, 112);
-  g.fillStyle = '#ffd58a';
-  g.font = '900 68px "Lilita One", "Arial Black", sans-serif';
+  g.fillRect(0, 0, 640, 120);
+  g.strokeStyle = '#c8924f';
+  g.lineWidth = 8;
+  g.strokeRect(8, 8, 624, 104);
+  g.fillStyle = '#fff1c9';
+  g.font = '900 78px "Lilita One", "Arial Black", sans-serif';
   g.textAlign = 'center';
   g.textBaseline = 'middle';
-  g.fillText(text, 256, 60);
+  g.fillText(text, 320, 64);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
@@ -1050,7 +1053,7 @@ function dressLockers(world, root) {
     add(mesh(new RoundedBoxGeometry(0.5, 0.03, width * 0.8, 2, 0.01), tone.mat, front - 0.42, DOCK.top + 0.015, c.z, { shadow: false }));
 
     // double doors with raised panels and brass knobs
-    const doorH = s.y * 0.68;
+    const doorH = s.y * 0.6; // room above for the name board, under the badge
     const doorY = DOCK.top + 0.14 + doorH / 2 + 0.04;
     for (const side of [-1, 1]) {
       const dz = c.z + side * (width * 0.235);
@@ -1072,10 +1075,13 @@ function dressLockers(world, root) {
     const badgeMat = new THREE.MeshStandardMaterial({ map: badgeTexture(role), roughness: 0.6 });
     const badge = add(mesh(new THREE.CircleGeometry(0.19, 28), badgeMat, front - 0.075, badgeY, c.z, { shadow: false }));
     badge.rotation.y = -Math.PI / 2;
+    // the name board: on the front, between the doors and the badge, square
+    // to the dock and clear of the roof, so it reads from across the planks
+    const nameY = doorY + doorH / 2 + 0.13;
     const nameMat = new THREE.MeshStandardMaterial({ map: nameTexture(ROLE_NAMES[role] ?? role.toUpperCase()), roughness: 0.8 });
-    const board = add(mesh(new THREE.PlaneGeometry(width * 0.95, width * 0.21), nameMat, front - 0.13, top + 0.12, c.z, { shadow: false }));
+    const board = add(mesh(new THREE.PlaneGeometry(width * 0.9, width * 0.17), nameMat, front - 0.081, nameY, c.z, { shadow: false }));
     board.rotation.y = -Math.PI / 2;
-    add(mesh(new THREE.BoxGeometry(0.04, width * 0.23, width * 0.97), paint('#5b3a22'), front - 0.105, top + 0.12, c.z));
+    add(mesh(new THREE.BoxGeometry(0.05, width * 0.18, width * 0.92), paint('#5b3a22'), front - 0.05, nameY, c.z));
 
     // pitched roof with an overhang, ridge running along the dock
     const roofGeo = new THREE.CylinderGeometry(1, 1, 1, 3, 1);
