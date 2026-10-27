@@ -255,6 +255,7 @@ export function buildShip() {
     0
   );
   balloon.scale.set(14 * (length / 24), 4, 5); // as long as the hull asks
+  balloon.name = 'balloon'; // airship.js puts the real envelope in its place
 
   // The rock the pilot dodges, waiting out of sight until one is thrown.
   const rock = part(
