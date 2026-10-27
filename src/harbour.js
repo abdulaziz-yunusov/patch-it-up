@@ -677,14 +677,26 @@ export function buildHarbour(world, scene, model) {
   k.position.set(0, DOCK.top, -27.7);
   harbour.add(k);
 
-  // Bunting from the lamp posts, criss-crossing over the dock, with
-  // lanterns; and along both rails.
+  // Bunting on its own tall poles, just outside the rails: one at each
+  // corner and one halfway along each side. Criss-crossing over the dock
+  // with lanterns, and along both rails, well above everyone's heads.
+  const TIE = 3.6; // where the lines are tied, metres up (the planks are at -1.2)
+  const corners = { nw: [-6.2, -25.2], ne: [6.2, -25.2], sw: [-6.2, -4.8], se: [6.2, -4.8], w: [-6.2, -15.8], e: [6.2, -15.8] };
+  for (const [x, z] of Object.values(corners)) {
+    const height = TIE + 0.3 - DOCK.top;
+    harbour.add(mesh(new THREE.CylinderGeometry(0.09, 0.12, height, 8), paint(PALETTE.beam), x, DOCK.top + height / 2, z));
+    harbour.add(mesh(new THREE.SphereGeometry(0.14, 10, 8), paint('#ffc93c', { rough: 0.5 }), x, TIE + 0.38, z));
+    harbour.add(mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.1, 10), paint('#5b3a22'), x, TIE, z));
+  }
+  const at = (key) => [corners[key][0], TIE, corners[key][1]];
   const lanterns = [];
   for (const [from, to, sag, n] of [
-    [[-5.5, 2.15, -24.5], [5.5, 2.15, -5.5], 0.7, 3],
-    [[5.5, 2.15, -24.5], [-5.5, 2.15, -5.5], 0.7, 3],
-    [[-5.5, 2.15, -24.5], [-5.5, 2.15, -5.5], 0.5, 0],
-    [[5.5, 2.15, -24.5], [5.5, 2.15, -5.5], 0.5, 0],
+    [at('nw'), at('se'), 0.8, 3],
+    [at('ne'), at('sw'), 0.8, 3],
+    [at('nw'), at('w'), 0.4, 0],
+    [at('w'), at('sw'), 0.4, 0],
+    [at('ne'), at('e'), 0.4, 0],
+    [at('e'), at('se'), 0.4, 0],
   ]) {
     const b = bunting(from, to, sag, rand, n);
     harbour.add(b.group);
