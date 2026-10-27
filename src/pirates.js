@@ -21,7 +21,7 @@ const SHIP_URL = `${import.meta.env.BASE_URL}models/pirate_ship.glb`;
 // Where their ship holds station, in our ship's space: ahead and off to
 // one side, far enough out that its hull clears ours, near enough to the
 // bow that the helm sees it through the window.
-const ALONGSIDE = { x: SHIP.length / 2 + 11, z: 8, y: -0.6 };
+const ALONGSIDE = { x: SHIP.length / 2 + 13, z: 8, y: -0.6 }; // clear of our envelope's nose
 const SIGHTED_FROM = { x: 150, z: 32 }; // out of the fog
 const RAIL = { x: [-2, 1, 4], z: 2.5, y: 0.9 }; // where their grapple lines leave the rail
 
