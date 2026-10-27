@@ -14,6 +14,7 @@ const SPEAKING_HOLD_MS = 300; // and still counts as talking this long after
 
 let ctx = null;
 let bus = null; // every voice, before the volume setting
+let out = null; // the voices and the music together, on their way to the speakers
 let output = null; // { element, pcs } while the Chrome loopback plays
 let route = 'direct'; // how voices reach the speakers: 'direct', or 'loopback' on Chrome
 let volume = 1; // the voices slider times the master volume
@@ -26,9 +27,18 @@ export function audioContext() {
   ctx = new Context({ latencyHint: 'interactive' });
   bus = ctx.createGain();
   bus.gain.value = volume;
+  out = ctx.createGain();
+  bus.connect(out);
   if (CHROMIUM) routeThroughLoopback();
-  else bus.connect(ctx.destination);
+  else out.connect(ctx.destination);
   return ctx;
+}
+
+// Where the music goes in: out the same way as the voices, so on Chrome
+// it takes the echo-cancelling detour too and a crew without headphones
+// does not send the music back down each other's microphones.
+export function musicInput() {
+  return audioContext() ? out : null;
 }
 
 // Whether the sound is up and running (without starting it).
@@ -58,7 +68,7 @@ export function outputRoute() {
 async function routeThroughLoopback() {
   const sink = ctx.createMediaStreamDestination();
   sink.channelCount = 2;
-  bus.connect(sink);
+  out.connect(sink);
   const send = new RTCPeerConnection();
   const take = new RTCPeerConnection();
   let fell = false;
@@ -73,11 +83,11 @@ async function routeThroughLoopback() {
     if (output) output.element.srcObject = null;
     output = null;
     try {
-      bus.disconnect(sink);
+      out.disconnect(sink);
     } catch {
       // already apart
     }
-    bus.connect(ctx.destination);
+    out.connect(ctx.destination);
   };
   try {
     send.onicecandidate = (e) => e.candidate && take.addIceCandidate(e.candidate).catch(() => {});
