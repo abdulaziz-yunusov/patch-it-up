@@ -789,8 +789,8 @@ export function buildHarbour(world, scene, model) {
   // Everything that never moves becomes a few big meshes, one per
   // material: hundreds of flowers, leaves and beams cost a few draws.
   const live = booths.flatMap((b) => {
-    const parts = [b.lamp, b.prop];
-    b.lamp.parent.traverse((o) => o.isMesh && Object.values(b.tone).includes(o.material) && parts.push(o));
+    const parts = [b.prop];
+    b.prop.parent.traverse((o) => o.isMesh && (Object.values(b.tone).includes(o.material) || o.material === b.lamp.material) && parts.push(o));
     return parts;
   });
   bake(harbour, new Set([...gulls, flag, pennant, near.inst, sea.inst, beacon.lamp, ...lanterns, ...live]));
@@ -972,9 +972,13 @@ function roofProp(role) {
     g.userData.bulb = bulb;
     const shape = new THREE.Shape();
     [[0.04, 0.2], [-0.07, 0.02], [0, 0.02], [-0.03, -0.18], [0.09, 0.03], [0.02, 0.03], [0.07, 0.2]].forEach(([x, y], i) => (i ? shape.lineTo(x, y) : shape.moveTo(x, y)));
-    const bolt = mesh(new THREE.ExtrudeGeometry(shape, { depth: 0.04, bevelEnabled: false }), paint('#ffd84d', { emissive: '#ffb020', glow: 0.3 }), 0, 0.26, 0.28);
-    bolt.rotation.y = -Math.PI / 2;
-    g.add(bolt);
+    // a bolt either side of the bulb, mirror images
+    for (const side of [-1, 1]) {
+      const bolt = mesh(new THREE.ExtrudeGeometry(shape, { depth: 0.04, bevelEnabled: false }).translate(-0.01, 0, -0.02), paint('#ffd84d', { emissive: '#ffb020', glow: 0.3 }), 0, 0.26, side * 0.28);
+      bolt.rotation.y = -Math.PI / 2;
+      bolt.scale.x = side;
+      g.add(bolt);
+    }
   } else {
     // a ship's wheel
     const wheel = new THREE.Group();
@@ -983,7 +987,7 @@ function roofProp(role) {
     wheel.add(mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.06, 12).rotateX(Math.PI / 2), brass));
     for (let i = 0; i < 8; i++) {
       const spoke = mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.56, 6), wood);
-      spoke.rotation.z = (i / 8) * Math.PI;
+      spoke.rotation.z = (i / 4) * Math.PI; // 4 rods through the hub: 8 even spokes, 45° apart
       if (i < 4) wheel.add(spoke);
       const knob = mesh(new THREE.SphereGeometry(0.03, 8, 6), wood);
       const a = (i / 8) * Math.PI * 2;
@@ -1083,10 +1087,15 @@ function dressLockers(world, root) {
     add(mesh(new THREE.BoxGeometry(s.x + 0.3, 0.06, width + 0.32), paint('#5b3a22'), c.x - 0.04, top + 0.02, c.z));
 
     // a lamp on a bracket, lit while the uniform is free
-    const lampZ = c.z + width / 2 - 0.02;
-    add(mesh(new THREE.BoxGeometry(0.2, 0.03, 0.03), paint('#3e4a5c'), front - 0.09, badgeY + 0.06, lampZ));
-    add(mesh(new THREE.ConeGeometry(0.07, 0.06, 12), paint('#3e4a5c'), front - 0.17, badgeY + 0.05, lampZ));
-    const lamp = add(mesh(new THREE.SphereGeometry(0.055, 12, 10), new THREE.MeshStandardMaterial({ color: '#fff1c4', emissive: '#ffcc66', emissiveIntensity: 1.2 }), front - 0.17, badgeY - 0.01, lampZ, { shadow: false }));
+    // a lamp on a bracket each side of the badge, lit while the uniform is free
+    const lampMat = new THREE.MeshStandardMaterial({ color: '#fff1c4', emissive: '#ffcc66', emissiveIntensity: 1.2 });
+    for (const side of [-1, 1]) {
+      const lampZ = c.z + side * (width / 2 - 0.02);
+      add(mesh(new THREE.BoxGeometry(0.2, 0.03, 0.03), paint('#3e4a5c'), front - 0.09, badgeY + 0.06, lampZ));
+      add(mesh(new THREE.ConeGeometry(0.07, 0.06, 12), paint('#3e4a5c'), front - 0.17, badgeY + 0.05, lampZ));
+      add(mesh(new THREE.SphereGeometry(0.055, 12, 10), lampMat, front - 0.17, badgeY - 0.01, lampZ, { shadow: false }));
+    }
+    const lamp = { material: lampMat };
 
     // the role's prop on the roof
     const prop = roofProp(role);
