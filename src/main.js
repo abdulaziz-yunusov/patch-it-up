@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { DRIFT_METRES, HELM_STANCE, SHIP, buildShip, addLights, addSky, applyRolePalette, applyState, groundHeight, hatchShut, takeoffProgress, updateHazards } from './world.js';
 import { loadDockModel, updateDock, resetDockEffects } from './dock.js';
 import { buildHarbour, updateHarbour } from './harbour.js';
+import { dressCabin, updateCabin } from './cabin.js';
 import { loadHelmModel, updateHelm, resetHelmEffects } from './helm.js';
 import { loadPowerModel, updatePower, resetPowerEffects } from './power.js';
 import { loadEngineModel, updateEngineRoom, resetEngineEffects } from './engine.js';
@@ -105,6 +106,7 @@ loadDockModel(world).then((ok) => {
 loadHelmModel(world); // furnishes the pilot's cabin
 loadPowerModel(world); // furnishes the engineer's power room
 loadEngineModel(world); // furnishes the mechanic's engine room
+dressCabin(world); // ribs, pipes, gauges, cables, portholes, books: the rooms' details
 buildPirates(world); // the sky pirates' ship, crew, grapples and boarders
 
 const player = new LocalPlayer({ ship, camera, colliders: world.colliders });
@@ -1775,6 +1777,7 @@ function loop() {
   updateSky(dt);
   markShadows(now);
   updateHarbour(world, camera, { dt, t, fair, lampsOn: state.lampsOn, sound: play });
+  updateCabin(world, { t, dt, fair, power: livePower(0) });
   // The Blender dock swaps in its own lockers once it loads: paint those too.
   if (world.lockers !== paintedLockers) paintRoles();
   countFrame(now);
