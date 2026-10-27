@@ -681,7 +681,7 @@ export function buildHarbour(world, scene, model) {
   // corner and one halfway along each side. Criss-crossing over the dock
   // with lanterns, and along both rails, well above everyone's heads.
   const TIE = 3.6; // where the lines are tied, metres up (the planks are at -1.2)
-  const corners = { nw: [-6.2, -25.2], ne: [6.2, -25.2], sw: [-6.2, -4.8], se: [6.2, -4.8], w: [-6.2, -15.8], e: [6.2, -15.8] };
+  const corners = { nw: [-6.2, -25.2], ne: [6.2, -25.2], sw: [-6.2, -4.8], se: [6.2, -4.8], w: [-6.2, -16.5], e: [6.2, -16.5] };
   for (const [x, z] of Object.values(corners)) {
     const height = TIE + 0.3 - DOCK.top;
     harbour.add(mesh(new THREE.CylinderGeometry(0.09, 0.12, height, 8), paint(PALETTE.beam), x, DOCK.top + height / 2, z));
@@ -784,14 +784,21 @@ export function buildHarbour(world, scene, model) {
     return bird;
   });
 
+  const booths = dressLockers(world, harbour);
+
   // Everything that never moves becomes a few big meshes, one per
   // material: hundreds of flowers, leaves and beams cost a few draws.
-  bake(harbour, new Set([...gulls, flag, pennant, near.inst, sea.inst, beacon.lamp, ...lanterns]));
+  const live = booths.flatMap((b) => {
+    const parts = [b.lamp, b.prop];
+    b.lamp.parent.traverse((o) => o.isMesh && Object.values(b.tone).includes(o.material) && parts.push(o));
+    return parts;
+  });
+  bake(harbour, new Set([...gulls, flag, pennant, near.inst, sea.inst, beacon.lamp, ...lanterns, ...live]));
 
   const dome = skyDome();
   scene.add(dome);
 
-  world.harbour = { group: harbour, near, sea, gulls, flags: [flag, pennant], lanterns, beacon, dome };
+  world.harbour = { group: harbour, near, sea, gulls, flags: [flag, pennant], lanterns, beacon, dome, booths };
   return world.harbour;
 }
 
@@ -863,6 +870,259 @@ function restyleModel(model) {
   });
 }
 
+
+// --- the uniform booths ---------------------------------------------------------
+
+// The role's symbol, painted on a round badge: a wrench, a lightning bolt,
+// a ship's wheel. Dark ink on cream, so it reads in any colour palette.
+function badgeTexture(role) {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 256;
+  const g = canvas.getContext('2d');
+  g.fillStyle = '#fff4dc';
+  g.fillRect(0, 0, 256, 256);
+  g.translate(128, 128);
+  g.fillStyle = g.strokeStyle = '#2a2f4a';
+  g.lineCap = g.lineJoin = 'round';
+  if (role === 'mechanic') {
+    g.rotate(-Math.PI / 4);
+    g.lineWidth = 34;
+    g.beginPath();
+    g.moveTo(0, -40);
+    g.lineTo(0, 78);
+    g.stroke();
+    g.beginPath();
+    g.arc(0, -62, 42, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = '#fff4dc';
+    g.fillRect(-15, -112, 30, 50); // the jaw's opening
+  } else if (role === 'engineer') {
+    g.beginPath();
+    for (const [x, y] of [[18, -100], [-52, 14], [-6, 14], [-22, 100], [56, -20], [8, -20], [34, -100]]) g.lineTo(x, y);
+    g.closePath();
+    g.fill();
+  } else {
+    g.lineWidth = 16;
+    g.beginPath();
+    g.arc(0, 0, 62, 0, Math.PI * 2);
+    g.stroke();
+    g.beginPath();
+    g.arc(0, 0, 16, 0, Math.PI * 2);
+    g.fill();
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      g.lineWidth = 12;
+      g.beginPath();
+      g.moveTo(Math.cos(a) * 16, Math.sin(a) * 16);
+      g.lineTo(Math.cos(a) * 100, Math.sin(a) * 100);
+      g.stroke();
+      g.beginPath();
+      g.arc(Math.cos(a) * 100, Math.sin(a) * 100, 11, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function nameTexture(text) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 112;
+  const g = canvas.getContext('2d');
+  g.fillStyle = '#3b2516';
+  g.fillRect(0, 0, 512, 112);
+  g.fillStyle = '#ffd58a';
+  g.font = '900 68px "Lilita One", "Arial Black", sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(text, 256, 60);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+// What stands on each roof.
+function roofProp(role) {
+  const g = new THREE.Group();
+  const brass = paint('#e2b84a', { rough: 0.35 });
+  if (role === 'mechanic') {
+    // a gear, standing up
+    const gear = new THREE.Group();
+    gear.add(mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.08, 20).rotateX(Math.PI / 2), brass));
+    for (let i = 0; i < 10; i++) {
+      const tooth = mesh(new THREE.BoxGeometry(0.08, 0.09, 0.08), brass);
+      const a = (i / 10) * Math.PI * 2;
+      tooth.position.set(Math.cos(a) * 0.23, Math.sin(a) * 0.23, 0);
+      tooth.rotation.z = a;
+      gear.add(tooth);
+    }
+    gear.add(mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.1, 12).rotateX(Math.PI / 2), paint('#5d5a66', { rough: 0.5 })));
+    gear.position.y = 0.3;
+    gear.rotation.y = Math.PI / 2;
+    g.add(gear);
+    g.userData.spin = gear;
+  } else if (role === 'engineer') {
+    // a glowing bulb on a brass base, and a little bolt beside it
+    g.add(mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.12, 12), brass, 0, 0.06, 0));
+    const bulb = mesh(new THREE.SphereGeometry(0.13, 16, 12), paint('#fff3b0', { emissive: '#ffd84d', glow: 0.9, rough: 0.2 }), 0, 0.24, 0, { shadow: false });
+    bulb.material = bulb.material.clone();
+    g.add(bulb);
+    g.userData.bulb = bulb;
+    const shape = new THREE.Shape();
+    [[0.04, 0.2], [-0.07, 0.02], [0, 0.02], [-0.03, -0.18], [0.09, 0.03], [0.02, 0.03], [0.07, 0.2]].forEach(([x, y], i) => (i ? shape.lineTo(x, y) : shape.moveTo(x, y)));
+    const bolt = mesh(new THREE.ExtrudeGeometry(shape, { depth: 0.04, bevelEnabled: false }), paint('#ffd84d', { emissive: '#ffb020', glow: 0.3 }), 0, 0.26, 0.28);
+    bolt.rotation.y = -Math.PI / 2;
+    g.add(bolt);
+  } else {
+    // a ship's wheel
+    const wheel = new THREE.Group();
+    const wood = paint('#a0632f');
+    wheel.add(mesh(new THREE.TorusGeometry(0.2, 0.025, 8, 24), wood));
+    wheel.add(mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.06, 12).rotateX(Math.PI / 2), brass));
+    for (let i = 0; i < 8; i++) {
+      const spoke = mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.56, 6), wood);
+      spoke.rotation.z = (i / 8) * Math.PI;
+      if (i < 4) wheel.add(spoke);
+      const knob = mesh(new THREE.SphereGeometry(0.03, 8, 6), wood);
+      const a = (i / 8) * Math.PI * 2;
+      knob.position.set(Math.cos(a) * 0.29, Math.sin(a) * 0.29, 0);
+      wheel.add(knob);
+    }
+    wheel.position.y = 0.33;
+    wheel.rotation.y = Math.PI / 2;
+    g.add(wheel);
+    g.userData.spin = wheel;
+  }
+  return g;
+}
+
+const ROLE_NAMES = { mechanic: 'MECHANIC', engineer: 'ENGINEER', pilot: 'PILOT' };
+
+// Each uniform locker becomes a little booth. The locker mesh stays (the
+// game colours it, aims at it and bumps into it); its painted-on doors,
+// plate and flat lid make way for real ones, and every coloured part
+// follows the locker's colour, so palettes and the taken look still work.
+function dressLockers(world, root) {
+  const booths = [];
+  for (const locker of world.lockers ?? []) {
+    const role = locker.userData.takes;
+    for (const part of ['door_line', 'handle', 'nameplate', 'roof']) {
+      const old = locker.parent?.getObjectByName(`${locker.name}_${part}`);
+      if (old) old.visible = false;
+    }
+    // rounded body, same size and place
+    const geo = locker.geometry;
+    geo.computeBoundingBox();
+    const local = geo.boundingBox;
+    const size = local.getSize(new THREE.Vector3());
+    const mid = local.getCenter(new THREE.Vector3());
+    locker.geometry = new RoundedBoxGeometry(size.x, size.y, size.z, 3, Math.min(size.x, size.y, size.z) * 0.06).translate(mid.x, mid.y, mid.z);
+
+    const box = new THREE.Box3().setFromObject(locker);
+    const c = box.getCenter(new THREE.Vector3());
+    const s = box.getSize(new THREE.Vector3());
+    const front = box.min.x; // the booths face the dock, towards -x
+    const width = s.z;
+    const top = box.max.y;
+    const g = new THREE.Group();
+
+    const tone = {
+      door: new THREE.MeshStandardMaterial({ roughness: 0.75 }),
+      panel: new THREE.MeshStandardMaterial({ roughness: 0.8 }),
+      roof: new THREE.MeshStandardMaterial({ roughness: 0.85, flatShading: true }),
+      trim: new THREE.MeshStandardMaterial({ roughness: 0.7 }),
+      mat: new THREE.MeshStandardMaterial({ roughness: 1 }),
+    };
+    const add = (m) => {
+      m.userData.shadowSet = true;
+      g.add(m);
+      return m;
+    };
+
+    // base: a stone step and a doormat
+    add(mesh(new RoundedBoxGeometry(s.x + 0.24, 0.14, width + 0.24, 2, 0.03), paint('#9b8aa8', { rough: 0.95 }), c.x, DOCK.top + 0.07, c.z));
+    add(mesh(new RoundedBoxGeometry(0.5, 0.03, width * 0.8, 2, 0.01), tone.mat, front - 0.42, DOCK.top + 0.015, c.z, { shadow: false }));
+
+    // double doors with raised panels and brass knobs
+    const doorH = s.y * 0.68;
+    const doorY = DOCK.top + 0.14 + doorH / 2 + 0.04;
+    for (const side of [-1, 1]) {
+      const dz = c.z + side * (width * 0.235);
+      add(mesh(new RoundedBoxGeometry(0.05, doorH, width * 0.44, 2, 0.015), tone.door, front - 0.02, doorY, dz));
+      for (const py of [0.24, -0.2]) {
+        add(mesh(new RoundedBoxGeometry(0.03, doorH * 0.32, width * 0.3, 2, 0.01), tone.panel, front - 0.05, doorY + py * doorH, dz));
+      }
+      add(mesh(new THREE.SphereGeometry(0.04, 10, 8), paint('#e2b84a', { rough: 0.3 }), front - 0.08, doorY, c.z + side * 0.07));
+    }
+    // trim round the front
+    const trimT = 0.06;
+    add(mesh(new THREE.BoxGeometry(0.05, trimT, width + 0.04), tone.trim, front - 0.02, doorY + doorH / 2 + trimT / 2, c.z));
+    for (const side of [-1, 1]) add(mesh(new THREE.BoxGeometry(0.05, s.y, trimT), tone.trim, front - 0.02, c.y, c.z + side * (width / 2 - trimT / 2)));
+
+    // badge with the role's symbol, and the name board above the doors
+    const badgeY = top - 0.24;
+    const ring = add(mesh(new THREE.CylinderGeometry(0.23, 0.23, 0.05, 28).rotateZ(Math.PI / 2), tone.trim, front - 0.04, badgeY, c.z));
+    ring.scale.set(1, 1, 1);
+    const badgeMat = new THREE.MeshStandardMaterial({ map: badgeTexture(role), roughness: 0.6 });
+    const badge = add(mesh(new THREE.CircleGeometry(0.19, 28), badgeMat, front - 0.075, badgeY, c.z, { shadow: false }));
+    badge.rotation.y = -Math.PI / 2;
+    const nameMat = new THREE.MeshStandardMaterial({ map: nameTexture(ROLE_NAMES[role] ?? role.toUpperCase()), roughness: 0.8 });
+    const board = add(mesh(new THREE.PlaneGeometry(width * 0.95, width * 0.21), nameMat, front - 0.13, top + 0.12, c.z, { shadow: false }));
+    board.rotation.y = -Math.PI / 2;
+    add(mesh(new THREE.BoxGeometry(0.04, width * 0.23, width * 0.97), paint('#5b3a22'), front - 0.105, top + 0.12, c.z));
+
+    // pitched roof with an overhang, ridge running along the dock
+    const roofGeo = new THREE.CylinderGeometry(1, 1, 1, 3, 1);
+    roofGeo.rotateX(Math.PI / 2);
+    roofGeo.rotateZ(Math.PI / 2 + Math.PI);
+    const roof = add(mesh(roofGeo, tone.roof, c.x - 0.04, top + 0.3, c.z));
+    roof.scale.set(0.62, 0.45, width + 0.3);
+    roof.position.y = top + 0.23;
+    add(mesh(new THREE.BoxGeometry(s.x + 0.3, 0.06, width + 0.32), paint('#5b3a22'), c.x - 0.04, top + 0.02, c.z));
+
+    // a lamp on a bracket, lit while the uniform is free
+    const lampZ = c.z + width / 2 - 0.02;
+    add(mesh(new THREE.BoxGeometry(0.2, 0.03, 0.03), paint('#3e4a5c'), front - 0.09, badgeY + 0.06, lampZ));
+    add(mesh(new THREE.ConeGeometry(0.07, 0.06, 12), paint('#3e4a5c'), front - 0.17, badgeY + 0.05, lampZ));
+    const lamp = add(mesh(new THREE.SphereGeometry(0.055, 12, 10), new THREE.MeshStandardMaterial({ color: '#fff1c4', emissive: '#ffcc66', emissiveIntensity: 1.2 }), front - 0.17, badgeY - 0.01, lampZ, { shadow: false }));
+
+    // the role's prop on the roof
+    const prop = roofProp(role);
+    prop.position.set(c.x - 0.04, top + 0.42, c.z);
+    prop.traverse((o) => o.isMesh && (o.userData.shadowSet = true));
+    g.add(prop);
+
+    root.add(g);
+    booths.push({ locker, tone, lamp, prop });
+  }
+  return booths;
+}
+
+const _base = new THREE.Color();
+const _white = new THREE.Color('#ffffff');
+const _grey = new THREE.Color('#7a7a88');
+// Every frame: the booth's coloured parts follow its locker's colour (free,
+// taken, or the colour-blind palette); its lamp is lit while it is free.
+function updateBooths(booths, t) {
+  for (const b of booths) {
+    const taken = !!b.locker.userData.label?.visible;
+    // taken: the free colour, dimmed and greyed, so it reads at a glance
+    _base.copy(b.locker.userData.freeColor ?? b.locker.material.color);
+    if (taken) _base.lerp(_grey, 0.55).multiplyScalar(0.55);
+    b.locker.material.color.copy(_base);
+    b.tone.door.color.copy(_base).multiplyScalar(0.92);
+    b.tone.panel.color.copy(_base).lerp(_white, 0.18);
+    b.tone.roof.color.copy(_base).multiplyScalar(0.62);
+    b.tone.trim.color.copy(_base).lerp(_white, taken ? 0.25 : 0.55);
+    b.tone.mat.color.copy(_base).multiplyScalar(0.7);
+    b.lamp.material.emissiveIntensity = taken ? 0 : 1.2 + Math.sin(t * 3) * 0.2;
+    if (b.prop.userData.spin) b.prop.userData.spin.rotation.z = taken ? 0 : t * 0.8;
+    if (b.prop.userData.bulb) b.prop.userData.bulb.material.emissiveIntensity = taken ? 0.05 : 0.8 + Math.sin(t * 5) * 0.25;
+  }
+}
+
 // --- every frame -----------------------------------------------------------
 
 const DOCK_SKY = {
@@ -879,6 +1139,7 @@ export function updateHarbour(world, camera, { dt, t, fair, lampsOn }) {
   const u = h.dome.material.uniforms;
   u.sunAmount.value = fair;
   if (!world.dock.visible) return;
+  updateBooths(h.booths, t);
   // sunlit white in the harbour, storm-grey as she climbs into the weather
   h.near.inst.material.emissiveIntensity = 0.1 + 0.45 * fair;
   h.sea.inst.material.emissiveIntensity = 0.1 + 0.45 * fair;
