@@ -42,7 +42,10 @@ const listeners = new Set();
 const hostLinks = new Map(); // host: player id -> { id, conn, pc, duplex, relays, ready, tries, timer }
 let toHost = null; // joiner: { conn, pc, duplex }
 const watched = new WeakSet(); // peer connections whose ICE candidates we pass on
-const copies = new WeakMap(); // remote track -> a local copy, for browsers that cannot forward one directly
+// remote track -> { source, track } a local copy, for browsers that cannot
+// forward one directly. The audio graph holds a connected source alive on
+// its own, so each copy is taken apart when its joiner's link goes.
+const copies = new Map();
 
 export function initVoice({ send }) {
   post = send;
@@ -373,6 +376,7 @@ export function hostUnlink(id, { quiet = false } = {}) {
   clearTimeout(link.timer);
   hostLinks.delete(id);
   removeVoice(id);
+  dropCopy(link.duplex.receiver.track); // their voice, as passed on to the others
   if (!quiet) rewire();
 }
 
@@ -438,19 +442,28 @@ function rewire() {
 // Pass one joiner's voice on to another. Most browsers forward a received
 // track as it is; where that is refused, a copy made through Web Audio goes.
 function relay(sender, track) {
-  if (sender.track === track || (track && sender.track === copies.get(track))) return;
+  if (sender.track === track || (track && sender.track === copies.get(track)?.track)) return;
   sender.replaceTrack(track).catch(() => {
     const ctx = audioContext();
     if (!track || !ctx) return;
     let copy = copies.get(track);
     if (!copy) {
       const sink = ctx.createMediaStreamDestination();
-      ctx.createMediaStreamSource(new MediaStream([track])).connect(sink);
-      copy = sink.stream.getAudioTracks()[0];
+      const source = ctx.createMediaStreamSource(new MediaStream([track]));
+      source.connect(sink);
+      copy = { source, track: sink.stream.getAudioTracks()[0] };
       copies.set(track, copy);
     }
-    sender.replaceTrack(copy).catch(() => {});
+    sender.replaceTrack(copy.track).catch(() => {});
   });
+}
+
+function dropCopy(track) {
+  const copy = track && copies.get(track);
+  if (!copy) return;
+  copies.delete(track);
+  copy.source.disconnect();
+  copy.track.stop();
 }
 
 // Joiner: the host offers audio on our link. Send our mic in the duplex
@@ -567,6 +580,7 @@ export async function voiceDelays() {
 export function endVoice() {
   for (const link of hostLinks.values()) clearTimeout(link.timer);
   hostLinks.clear();
+  for (const track of [...copies.keys()]) dropCopy(track);
   toHost = null;
   knownVoices = new Set();
   clearVoices();
