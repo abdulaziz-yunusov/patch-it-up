@@ -157,7 +157,7 @@ export function buildShip() {
   const deck = new THREE.MeshStandardMaterial({ color: '#a87447', flatShading: true });
   const metal = new THREE.MeshStandardMaterial({ color: '#6b7183', flatShading: true });
 
-  // Scenery: seen, but walked through (floor, ceiling, accents, balloon).
+  // Scenery: seen, but walked through (floor, ceiling, accents).
   const part = (geometry, material, x, y, z) => {
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(x, y, z);
@@ -246,16 +246,7 @@ export function buildShip() {
   const stations = buildStations(ship, colliders, solid, box, metal);
   const breaches = buildBreaches(ship, part, box);
 
-  // The gas bag overhead: decoration, never walked into.
-  const balloon = part(
-    new THREE.SphereGeometry(1, 24, 16),
-    new THREE.MeshStandardMaterial({ color: '#c86a33', flatShading: true }),
-    0,
-    9,
-    0
-  );
-  balloon.scale.set(14 * (length / 24), 4, 5); // as long as the hull asks
-  balloon.name = 'balloon'; // airship.js puts the real envelope in its place
+  // The gas bag overhead is airship.js's envelope, built onto this ship.
 
   // The rock the pilot dodges, waiting out of sight until one is thrown.
   const rock = part(

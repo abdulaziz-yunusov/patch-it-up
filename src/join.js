@@ -87,16 +87,30 @@ export function joinFailed(message, code) {
     showError(`No ship found with code ${code}`, 'Check it with your host. Codes are 4 letters, a dash and a number.');
   } else if (message === 'Ship is full') {
     showError(`Ship ${code} is full`, 'A ship takes 3 crew at most. If someone leaves, a seat opens up.');
+  } else if (message === 'Busy') {
+    showError('Your own room is still opening', 'Wait for it, or leave it, before joining another ship.');
   } else {
     showError("Couldn't reach the ship", 'Pause your ad blocker for this site, or try another network.');
   }
+}
+
+// The saved list, keeping only well-formed entries: an older version or a
+// hand edit must not stop the Join screen opening, or throw a player off a
+// ship they just boarded.
+function savedRecent() {
+  const recent = load().recentCrews;
+  if (!Array.isArray(recent)) return [];
+  return recent
+    .filter((r) => r && typeof r === 'object' && typeof r.code === 'string' && CODE.test(r.code))
+    .map((r) => ({ code: r.code, host: typeof r.host === 'string' ? r.host : 'The host' }))
+    .slice(0, RECENT_MAX);
 }
 
 // Aboard: remember whose ship it was, newest first.
 export function joinSucceeded(code, hostName) {
   setBusy(false);
   const data = load();
-  const recent = (data.recentCrews ?? []).filter((r) => r.code !== code);
+  const recent = savedRecent().filter((r) => r.code !== code);
   recent.unshift({ code, host: hostName });
   save({ ...data, recentCrews: recent.slice(0, RECENT_MAX) });
 }
@@ -117,7 +131,7 @@ function clearError() {
 
 function drawRecent() {
   const list = $('recentCrews');
-  const recent = load().recentCrews ?? [];
+  const recent = savedRecent();
   if (!recent.length) {
     const empty = document.createElement('p');
     empty.className = 'recent-empty';

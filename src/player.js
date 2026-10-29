@@ -72,12 +72,33 @@ export function createPlayerMesh(color = ROLE_COLORS.crew, role = 'crew') {
   body.add(sphere);
 
   const white = new THREE.MeshStandardMaterial({ color: '#fff4dc', flatShading: true });
+  body.userData.owned = [sphere]; // made for this body alone: releasePlayerMesh frees them
   for (const side of [-1, 1]) {
     const eye = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 8), white);
     eye.position.set(side * 0.15, 0.1, -0.33); // -z is the way you look
     body.add(eye);
+    body.userData.owned.push(eye);
   }
   return body;
+}
+
+// A player mesh being dropped gives back to the GPU what was made for it
+// alone: its hat, its badge's material, and the stand-in sphere's parts or
+// the character's own shirt. A character's body is a skinned clone sharing
+// the loaded model's geometry, so that stays; so does anything only
+// passing through its hands (the patch kit, a bucket).
+function disposeParts(root) {
+  root?.traverse((obj) => {
+    if (!obj.isMesh) return;
+    obj.geometry.dispose();
+    obj.material.dispose();
+  });
+}
+function releasePlayerMesh(playerMesh) {
+  disposeParts(playerMesh.userData.hat);
+  playerMesh.userData.badge?.material.dispose(); // its texture is shared, kept by roleLook.js
+  playerMesh.userData.character?.shirt?.dispose();
+  for (const part of playerMesh.userData.owned ?? []) disposeParts(part);
 }
 
 // Hats from the dock mirror, sitting on top of a sphere. Index matches
@@ -113,6 +134,7 @@ export function setHat(playerMesh, hat = 0) {
   if (playerMesh.userData.hatIndex === hat) return;
   playerMesh.userData.hatIndex = hat;
   playerMesh.userData.hat?.removeFromParent();
+  disposeParts(playerMesh.userData.hat); // each hat's parts are its own
   const group = new THREE.Group();
   for (const mesh of (HAT_PARTS[hat] ?? HAT_PARTS[0])()) group.add(mesh);
   const character = playerMesh.userData.character;
@@ -422,7 +444,10 @@ export class LocalPlayer {
   ensureAvatar(role, color) {
     const look = lookForRole(role);
     if (this.avatar && this.avatar.role === look) return this.avatar;
-    if (this.avatar) this.avatar.root.removeFromParent();
+    if (this.avatar) {
+      this.avatar.root.removeFromParent();
+      releasePlayerMesh(this.avatar.root);
+    }
     const root = createPlayerMesh(color, role);
     const character = root.userData.character;
     if (!character) {
@@ -704,6 +729,7 @@ export class RemoteCrew {
       if (child.name === 'patchKit' || child.userData.held) child.removeFromParent();
     }
     this.ship.remove(old);
+    releasePlayerMesh(old);
     this.ship.add(mesh);
     entry.mesh = mesh;
   }
@@ -717,6 +743,7 @@ export class RemoteCrew {
     const entry = this.crew.get(id);
     if (!entry) return;
     this.ship.remove(entry.mesh);
+    releasePlayerMesh(entry.mesh);
     this.crew.delete(id);
   }
 

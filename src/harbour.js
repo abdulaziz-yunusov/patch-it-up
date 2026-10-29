@@ -59,6 +59,19 @@ export function mesh(geometry, material, x = 0, y = 0, z = 0, { shadow = true } 
   return m;
 }
 
+// A mesh built along y with height 1 (a unit cylinder), laid from one
+// point to the other: one geometry serves every rope, whatever its length.
+const _up = new THREE.Vector3(0, 1, 0);
+const _dir = new THREE.Vector3();
+export function stretch(m, from, to) {
+  _dir.subVectors(to, from);
+  const length = _dir.length();
+  m.position.copy(from).addScaledVector(_dir, 0.5);
+  m.quaternion.setFromUnitVectors(_up, _dir.normalize());
+  m.scale.set(1, length, 1);
+  return m;
+}
+
 // A warm wood grain to multiply over plank colours.
 let grain = null;
 export function woodGrain() {

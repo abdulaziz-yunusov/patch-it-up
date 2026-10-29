@@ -350,6 +350,10 @@ net.onState = (incoming, hostTime) => {
 
 net.onLost = () => rejoin();
 net.onClosed = () => leaveShip('The host closed the ship');
+// A copy of this tab (the browser's "Duplicate tab") came aboard with our
+// seat's token. The newer tab keeps the seat; trying to take it back would
+// only knock that one off, and it would do the same to us, round and round.
+net.onMoved = () => leaveShip('You came aboard in another tab');
 
 // Voice rides on the same links: the host adds audio to each joiner's as
 // soon as they are seated (again, after a reconnect).
@@ -373,6 +377,9 @@ function syncMic() {
 initMenu({
   onHost: () => hostGame(),
   onJoin: () => {
+    // A room still opening owns the connection: joining now would shut it
+    // down, and the room's next try would shut the join down in turn.
+    if (opening || sessionActive) return;
     openJoin();
     startMic();
   },
@@ -523,6 +530,7 @@ const SERVER_TROUBLE = new Set(['network', 'server-error', 'socket-error', 'sock
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function joinGame(code) {
+  if (opening || sessionActive) return joinFailed('Busy', code);
   const attempt = ++joinAttempt;
   local.name = playerName();
   local.isHost = false;
@@ -570,7 +578,9 @@ function board(welcome, code) {
 }
 
 // The seat token lives in the tab (sessionStorage), so a reload can still
-// claim the seat back, but a second tab never takes the first one's seat.
+// claim the seat back, and a second tab opened fresh gets a seat of its
+// own. A duplicated tab copies sessionStorage, token and all: that copy
+// takes the seat over and the first tab is sent home (see 'moved').
 function savedSeat(code) {
   try {
     const seat = JSON.parse(sessionStorage.getItem('patchitup-seat') ?? 'null');
@@ -732,6 +742,9 @@ function leaveShip(message = '', { keepSeat = false } = {}) {
   calloutBox.hidden = true;
   seenStormHits = null;
   alertBox.hidden = true;
+  // Flights count from 1 again next session: its first ending is a new one.
+  endingCues = { flight: -1, next: 0 };
+  endJolt = 0;
   if (isSettingsOpen()) closeSettings();
   refreshNameChip();
   note(message);
@@ -917,7 +930,11 @@ function hostTick(dt, now) {
     const holding = hold?.target?.userData.interact?.action;
     seated.act = holding === 'patch' || holding === 'cutHook' ? 'patch' : null;
   }
+}
 
+// After the frame's substeps: the view, the crew as drawn, and the state
+// out to the joiners, once per frame however many steps it took.
+function hostPublish(now) {
   player.syncView(); // the host's camera follows its own authoritative body
   crew.sync(state.players, local.id);
   for (const other of Object.values(state.players)) {
@@ -965,6 +982,8 @@ function updateRoundHud(now) {
     ? `Furnace ${heat}% · ${state.spare} spare power`
     : `Furnace ${heat}%`;
 
+  // Fewer than we saw: a fresh round (startRound counts from 0 again), not a hole.
+  if (state.opened < seenOpened) seenOpened = state.opened;
   if (state.opened > seenOpened) {
     seenOpened = state.opened;
     flashUntil = now + 500;
@@ -1437,19 +1456,21 @@ function heldMesh(kind) {
   return group;
 }
 function updateHeldItems() {
-  for (const player of Object.values(state.players)) {
-    const kind = player.bucket ? 'bucket' : player.fuse ? 'fuse' : null;
-    const mine = player.id === local.id;
+  // seated: each player's record in the state. The view (first or third
+  // person) and your own character are the LocalPlayer's, not the record's.
+  for (const seated of Object.values(state.players)) {
+    const kind = seated.bucket ? 'bucket' : seated.fuse ? 'fuse' : null;
+    const mine = seated.id === local.id;
     // First person: in front of the camera. Otherwise in the character's
     // arms (its hold socket), or in front of a sphere before it loads.
     const firstPerson = mine && !player.thirdPerson;
-    const carrier = mine ? (inWorld ? player.avatar?.root ?? null : null) : crew.meshFor(player.id);
+    const carrier = mine ? (inWorld ? player.avatar?.root ?? null : null) : crew.meshFor(seated.id);
     const character = firstPerson ? null : carrier?.userData.character;
     const holder = firstPerson ? (inWorld ? camera : null) : character?.holdSocket ?? carrier;
-    let held = heldMeshes.get(player.id);
+    let held = heldMeshes.get(seated.id);
     if (held && (held.kind !== kind || held.mesh.parent !== holder)) {
       held.mesh.removeFromParent();
-      heldMeshes.delete(player.id);
+      heldMeshes.delete(seated.id);
       held = null;
     }
     if (!kind || !holder || held) continue;
@@ -1459,7 +1480,7 @@ function updateHeldItems() {
     else if (character) mesh.position.set(0, -0.05, 0.02);
     else mesh.position.set(0.32, 0.05, -0.45);
     holder.add(mesh);
-    heldMeshes.set(player.id, { kind, mesh });
+    heldMeshes.set(seated.id, { kind, mesh });
   }
   for (const [id, held] of heldMeshes) {
     if (!state.players[id]) {
@@ -1613,6 +1634,7 @@ function step(now) {
     }
     const n = substeps(dt);
     for (let i = 0; i < n; i++) hostTick(dt / n, now); // a tap is used up by the first
+    hostPublish(now);
   } else {
     joinerTick(input, dt, now, inWorld);
   }
@@ -1785,7 +1807,9 @@ function loop() {
   markShadows(now);
   updateHarbour(world, camera, { dt, t, fair, lampsOn: state.lampsOn, sound: play });
   updateCabin(world, { t, dt, fair, power: livePower(0) });
-  updateAirship(world, { t, dt, flying: state.phase === 'flight' || state.phase === 'takeoff', engines: livePower(0) });
+  // Still in the air while she comes in or goes down: the propellers and
+  // the flag keep flying speed until the result screen.
+  updateAirship(world, { t, dt, flying: airborne, engines: livePower(0) });
   // The Blender dock swaps in its own lockers once it loads: paint those too.
   if (world.lockers !== paintedLockers) paintRoles();
   countFrame(now);

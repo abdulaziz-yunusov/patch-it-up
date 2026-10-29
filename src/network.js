@@ -8,6 +8,8 @@
 //                             also how the host knows you are still there.
 //   state    host -> all      20 per second: players, breaches, power
 //   bye      either way       leaving on purpose: nobody waits for you to come back
+//   moved    host -> joiner   your seat went to a newer line with its token (a
+//                             duplicated tab): stop, rather than take it back
 //   rtc      either way       voice: adding audio to this same link (see voice.js)
 //   voice    host -> joiner   voice: whose voice comes in which audio slot
 //
@@ -92,6 +94,7 @@ export class Net {
     this.onState = null; // (snapshot, hostTime)
     this.onLost = null; // () the line to the host broke
     this.onClosed = null; // () the host said goodbye
+    this.onMoved = null; // () our seat went to another line with the same token
     this.onSeated = null; // (id, conn) host: a joiner's seat now listens to this connection
     this.onSignal = null; // (msg, conn, id) voice messages; id is the sender's seat on the host, null on a joiner
   }
@@ -173,6 +176,9 @@ export class Net {
         else if (msg.t === 'bye') {
           this.hostConn = null;
           this.onClosed?.();
+        } else if (msg.t === 'moved') {
+          this.hostConn = null; // no goodbye on it: the seat is someone else's now
+          this.onMoved?.();
         }
       });
       conn.on('close', () => {
@@ -257,10 +263,16 @@ export class Net {
         seatId = seat.id;
         // Back on a new line before the old one was noticed dead: the new
         // one takes over first, so the old one's 'close' finds it is not
-        // current and changes nothing.
+        // current and changes nothing. The old line is told why, in case
+        // it is still alive (a duplicated tab carries the same token): it
+        // must not come straight back and take the seat again. A joiner
+        // reconnecting has closed its old line already and never hears it.
         const old = this.conns.get(seatId);
         this.conns.set(seatId, conn);
-        if (old && old !== conn) old.close();
+        if (old && old !== conn) {
+          send(old, encode({ t: 'moved' }));
+          setTimeout(() => old.close(), GOODBYE_MS);
+        }
         send(conn, encode({ t: 'welcome', id: seat.id, token: seat.token, s: seat.snapshot }));
         this.onSeated?.(seat.id, conn);
       } else if (!current()) {

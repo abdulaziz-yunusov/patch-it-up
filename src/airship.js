@@ -6,13 +6,15 @@
 // flight, rigging down to the hull, and red and green navigation lights.
 //
 // Scenery only: it hangs above the cabin roof, nothing to walk into or aim
-// at. It takes the place of the old plain balloon in world.js.
+// at.
 
 import * as THREE from 'three';
 import { SHIP } from './world.js';
-import { mesh, paint } from './harbour.js';
+import { mesh, paint, stretch } from './harbour.js';
 
-export const ENVELOPE = { length: 36, radius: 6.1, y: 10.7 };
+// A little longer than the hull (36 m over 30), so it grows with her: the
+// fins and tail propeller stay aft of the cabin, the rigging under the bag.
+export const ENVELOPE = { length: SHIP.length * 1.2, radius: 6.1, y: 10.7 };
 const HALF = ENVELOPE.length / 2;
 
 // Radius along the length, u from -1 (tail) to 1 (nose).
@@ -29,7 +31,23 @@ function fabric() {
   const canvas = document.createElement('canvas');
   canvas.width = W;
   canvas.height = H;
-  const g = canvas.getContext('2d');
+  paintFabric(canvas.getContext('2d'), W, H);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = 8;
+  // The name is in the game's own font, which is seldom loaded yet on a
+  // cold start: paint it all again once it is, rather than keep the fallback.
+  document.fonts
+    ?.load('900 150px "Lilita One"')
+    .then(() => {
+      paintFabric(canvas.getContext('2d'), W, H);
+      texture.needsUpdate = true;
+    })
+    .catch(() => {});
+  return texture;
+}
+
+function paintFabric(g, W, H) {
   const gores = 16;
   for (let i = 0; i < gores; i++) {
     g.fillStyle = i % 2 ? '#ec7a34' : '#f39a3c';
@@ -80,17 +98,16 @@ function fabric() {
     g.textBaseline = 'middle';
     g.lineWidth = 16;
     g.strokeStyle = '#5a2a10';
-    g.strokeText('PATCH IT UP!', 0, 0);
+    // It runs along the canvas height: squeezed to fit, stroke and all,
+    // whichever font it is drawn in.
+    const fit = H - 80;
+    g.strokeText('PATCH IT UP!', 0, 0, fit);
     g.fillStyle = '#fff1c9';
-    g.fillText('PATCH IT UP!', 0, 0);
+    g.fillText('PATCH IT UP!', 0, 0, fit);
     g.restore();
   };
   name(0.25, -Math.PI / 2);
   name(0.75, Math.PI / 2);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.anisotropy = 8;
-  return texture;
 }
 
 function envelope() {
@@ -107,19 +124,31 @@ function envelope() {
   return mesh(geo, material);
 }
 
-function fin(rand = 0) {
+// rootAt(x): how far below the fin's base line the bag's surface is at x
+// along the root (0 at the trailing edge, 4.2 at the leading), 0 or less.
+// The bag tapers fast under the tail, so the root follows it down rather
+// than leaving the back of the fin hanging in the air.
+const FIN_ROOT = 4.2;
+function fin(rand = 0, rootAt = () => 0) {
+  const top = 3.4 + rand;
   const shape = new THREE.Shape();
-  shape.moveTo(0, 0);
-  shape.lineTo(4.2, 0);
-  shape.lineTo(1.2, 3.4 + rand);
-  shape.lineTo(-0.4, 3.4 + rand);
+  shape.moveTo(0, rootAt(0));
+  for (let i = 1; i <= 8; i++) {
+    const x = (FIN_ROOT * i) / 8;
+    shape.lineTo(x, rootAt(x));
+  }
+  shape.lineTo(1.2, top);
+  shape.lineTo(-0.4, top);
   shape.closePath();
   const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.14, bevelEnabled: true, bevelSize: 0.05, bevelThickness: 0.04, bevelSegments: 2 });
   geo.translate(0, 0, -0.07);
   const g = new THREE.Group();
   g.add(mesh(geo, paint('#d6453b', { rough: 0.5 })));
-  // gold trim along the trailing edge
-  g.add(mesh(new THREE.BoxGeometry(0.2, 3.5 + rand, 0.24), paint('#ffc93c', { rough: 0.4 }), -0.3, (3.4 + rand) / 2, 0));
+  // gold trim along the trailing edge, from the root down on the bag to the tip
+  const low = rootAt(0);
+  const trim = mesh(new THREE.BoxGeometry(0.2, top - low + 0.1, 0.24), paint('#ffc93c', { rough: 0.4 }), -0.2, (top + low) / 2, 0);
+  trim.rotation.z = Math.atan2(0.4, top - low); // leaning back with the edge
+  g.add(trim);
   return g;
 }
 
@@ -148,7 +177,7 @@ function enginePod(side) {
   // struts up to the envelope
   for (const x of [-0.8, 0.8]) {
     const strut = mesh(new THREE.CylinderGeometry(0.07, 0.07, 2.4, 8), paint('#4d5566', { rough: 0.5 }), x, 0.9, -side * 0.9);
-    strut.rotation.x = side * 0.75;
+    strut.rotation.x = -side * 0.75; // its top leans in, to meet the bag
     g.add(strut);
   }
   const prop = propeller(1.15, 3);
@@ -161,15 +190,15 @@ function enginePod(side) {
 
 export function buildAirship(world) {
   const ship = world.ship;
-  ship.getObjectByName('balloon')?.removeFromParent();
   const root = new THREE.Group();
   root.name = 'airship';
   root.position.y = ENVELOPE.y;
 
   root.add(envelope());
 
-  // brass hoops round the bag, and a cap on the nose
-  for (const u of [-0.55, 0, 0.55]) {
+  // brass hoops round the bag, and a cap on the nose (the aft hoop forward
+  // of the engine pods, which reach up to u -0.53)
+  for (const u of [-0.45, 0, 0.45]) {
     const r = radiusAt(u);
     root.add(mesh(new THREE.TorusGeometry(r + 0.04, 0.09, 8, 64).rotateY(Math.PI / 2), paint('#d9a441', { rough: 0.3 }), u * HALF, 0, 0));
   }
@@ -178,12 +207,15 @@ export function buildAirship(world) {
 
   // tail fins: top, bottom, port, starboard
   const finX = -HALF + 4.6;
+  const finBase = radiusAt((finX - 1) / HALF) - 0.6;
+  // Sunk 0.4 m into the bag all along the root, never higher than the base.
+  const finRoot = (x) => Math.min(0, radiusAt((finX - 3.8 + x) / HALF) - 0.4 - finBase);
   for (const [angle, extra] of [[0, 0.6], [Math.PI, -0.4], [Math.PI / 2, 0], [-Math.PI / 2, 0]]) {
-    const f = fin(extra);
+    const f = fin(extra, finRoot);
     const holder = new THREE.Group();
     holder.position.x = finX;
     holder.rotation.x = angle;
-    f.position.set(-3.8, radiusAt((finX - 1) / HALF) - 0.6, 0);
+    f.position.set(-3.8, finBase, 0);
     holder.add(f);
     root.add(holder);
   }
@@ -205,8 +237,9 @@ export function buildAirship(world) {
   for (const side of [-1, 1]) {
     const pod = enginePod(side);
     // aft, clear of the name painted amidships
-    const r = radiusAt(-11.5 / HALF);
-    pod.position.set(-11.5, -r * 0.45, side * (r + 0.55));
+    const x = -HALF * 0.64;
+    const r = radiusAt(x / HALF);
+    pod.position.set(x, -r * 0.45, side * (r + 0.55));
     root.add(pod);
     pods.push(pod.userData.prop);
   }
@@ -219,33 +252,30 @@ export function buildAirship(world) {
     navs.push(light);
   }
 
-  // rigging: ropes from the bag's belly down to the edges of the cabin roof
+  // rigging: ropes from the bag's belly down to the edges of the cabin roof,
+  // every one the same unit cylinder stretched to fit
   const rope = paint('#e8d6ae', { rough: 0.9 });
+  const ropeGeo = new THREE.CylinderGeometry(0.035, 0.035, 1, 5);
   const roofY = SHIP.wallHeight + 0.2 - ENVELOPE.y;
   for (let x = -SHIP.length / 2 + 1.5; x <= SHIP.length / 2 - 1.5; x += 3) {
     const r = radiusAt(x / HALF);
     for (const side of [-1, 1]) {
       const from = new THREE.Vector3(x, -r * 0.82, side * r * 0.55);
-      const to = new THREE.Vector3(x + side * 0.0, roofY, side * (SHIP.width / 2 - 0.15));
-      const length = from.distanceTo(to);
-      const line = mesh(new THREE.CylinderGeometry(0.035, 0.035, length, 5), rope);
-      line.position.copy(from).add(to).multiplyScalar(0.5);
-      line.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), to.clone().sub(from).normalize());
-      root.add(line);
+      const to = new THREE.Vector3(x, roofY, side * (SHIP.width / 2 - 0.15));
+      root.add(stretch(mesh(ropeGeo, rope), from, to));
     }
   }
   // and two stout struts amidships, fore and aft, to carry the weight
-  for (const x of [-9, 9]) {
+  const strutGeo = new THREE.CylinderGeometry(0.16, 0.2, 1, 10);
+  for (const x of [-HALF / 2, HALF / 2]) {
     const r = radiusAt(x / HALF);
-    const from = new THREE.Vector3(x, -r * 0.95, 0);
-    const to = new THREE.Vector3(x, roofY, 0);
-    const strut = mesh(new THREE.CylinderGeometry(0.16, 0.2, from.distanceTo(to), 10), paint('#6e4529'));
-    strut.position.copy(from).add(to).multiplyScalar(0.5);
-    root.add(strut);
+    const foot = new THREE.Vector3(x, roofY, 0);
+    const head = new THREE.Vector3(x, -r * 0.95, 0);
+    root.add(stretch(mesh(strutGeo, paint('#6e4529')), foot, head)); // the thick end on the roof
   }
 
   ship.add(root);
-  world.airship = { root, tail: tail.userData.spin, pods, flag, navs };
+  world.airship = { root, tail: tail.userData.spin, pods, flag, navs, wave: 0 };
   return world.airship;
 }
 
@@ -257,11 +287,14 @@ export function updateAirship(world, { t, dt, flying, engines = 2 }) {
   const speed = flying ? 8 + engines * 5 : 1.6;
   a.tail.rotation.x += speed * dt;
   for (const p of a.pods) p.rotation.x -= speed * 1.2 * dt;
+  // The wave runs on its own clock, faster in flight: a rate times the
+  // whole clock would leap to an unrelated shape whenever the rate changed.
+  a.wave += (flying ? 11 : 5) * dt;
   const pos = a.flag.geometry.attributes.position;
   const rest = a.flag.userData.rest;
   for (let i = 0; i < pos.count; i++) {
     const x = rest[i * 3];
-    pos.setZ(i, Math.sin(x * 3.5 - t * (flying ? 11 : 5)) * 0.14 * x);
+    pos.setZ(i, Math.sin(x * 3.5 - a.wave) * 0.14 * x);
   }
   pos.needsUpdate = true;
   a.flag.geometry.computeVertexNormals();

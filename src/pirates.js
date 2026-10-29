@@ -15,6 +15,7 @@ import { HOOK_HEIGHT, HOOK_SPOTS, SHIP, hookX } from './world.js';
 import { loadPirates, makePirate } from './character.js';
 import { softenMetal } from './rooms.js';
 import { play } from './sound.js';
+import { stretch } from './harbour.js';
 
 const SHIP_URL = `${import.meta.env.BASE_URL}models/pirate_ship.glb`;
 
@@ -52,6 +53,19 @@ const iron = new THREE.MeshStandardMaterial({ color: '#5b616f', metalness: 0.3, 
 const splinter = new THREE.MeshStandardMaterial({ color: '#3a2418', flatShading: true });
 const rope = new THREE.MeshStandardMaterial({ color: '#b89a6a', flatShading: true });
 const unseen = new THREE.MeshBasicMaterial({ visible: false });
+
+// Made once and shared: shots and boarders come and go all flight long,
+// and a geometry made for each would never be given back to the GPU.
+const puffGeo = new THREE.SphereGeometry(1, 10, 8); // scaled to each puff's size
+const ballGeo = new THREE.SphereGeometry(0.18, 10, 8);
+const ballMat = new THREE.MeshStandardMaterial({ color: '#1d1b22' });
+const boarderTargetGeo = new THREE.BoxGeometry(0.9, 1.8, 0.9);
+const stand = {
+  body: new THREE.SphereGeometry(0.4, 16, 12),
+  band: new THREE.TorusGeometry(0.36, 0.05, 6, 16),
+  bodyMat: new THREE.MeshStandardMaterial({ color: '#8e2b2b', flatShading: true }),
+  bandMat: new THREE.MeshStandardMaterial({ color: '#c9443a' }),
+};
 
 // A grapple through the wall: splintered planks, three iron tines curling
 // in, a stub of line. And a block in front to aim at: the tines are thin.
@@ -95,16 +109,6 @@ function buildRope(ship) {
   return mesh;
 }
 
-const _up = new THREE.Vector3(0, 1, 0);
-const _dir = new THREE.Vector3();
-function stretch(mesh, from, to) {
-  _dir.subVectors(to, from);
-  const length = _dir.length();
-  mesh.position.copy(from).addScaledVector(_dir, 0.5);
-  mesh.quaternion.setFromUnitVectors(_up, _dir.normalize());
-  mesh.scale.set(1, length, 1);
-}
-
 export function buildPirates(world) {
   const ship = world.ship;
   const holder = new THREE.Group();
@@ -131,6 +135,7 @@ export function buildPirates(world) {
     boarders: new Map(), // id -> { root, character, target, kind }
     effects,
     shots: [], // { kind, mesh, start, life, from, to }
+    landings: new Set(), // timers for balls still in the air
   };
   loadShip(world.pirates);
   loadPirates();
@@ -288,14 +293,14 @@ function makeBoarder(kind) {
   } else {
     // The models are not in yet: a pirate-red ball with a bandana stripe.
     root = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 12), new THREE.MeshStandardMaterial({ color: '#8e2b2b', flatShading: true }));
-    const band = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.05, 6, 16), new THREE.MeshStandardMaterial({ color: '#c9443a' }));
+    const body = new THREE.Mesh(stand.body, stand.bodyMat);
+    const band = new THREE.Mesh(stand.band, stand.bandMat);
     band.rotation.x = Math.PI / 2;
     band.position.y = 0.18;
     root.add(body, band);
     unaimable(root);
   }
-  const target = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.8, 0.9), unseen);
+  const target = new THREE.Mesh(boarderTargetGeo, unseen);
   target.position.y = 0.5; // body centre to the top of the head
   root.add(target);
   return { root, character, target, kind };
@@ -366,27 +371,32 @@ function updateShots(pir, raid, flying, now) {
     const shot = pir.shots[i];
     const k = (now - shot.start) / shot.life;
     if (k >= 1) {
-      shot.mesh.removeFromParent();
+      clearShot(shot);
       pir.shots.splice(i, 1);
       continue;
     }
     if (shot.kind === 'ball') shot.mesh.position.lerpVectors(shot.from, shot.to, k).y += Math.sin(k * Math.PI) * 0.8;
     else {
-      shot.mesh.scale.setScalar(shot.grow[0] + (shot.grow[1] - shot.grow[0]) * k);
+      shot.mesh.scale.setScalar(shot.size * (shot.grow[0] + (shot.grow[1] - shot.grow[0]) * k));
       shot.mesh.material.opacity = shot.fade * (1 - k);
     }
   }
 }
 
+// Off the scene. A puff's material is its own (each fades on its own
+// clock), so it goes back to the GPU; the shared geometry stays.
+function clearShot(shot) {
+  shot.mesh.removeFromParent();
+  if (shot.kind === 'puff') shot.mesh.material.dispose();
+}
+
 function puff(pir, at, { color, size, grow, life, fade = 0.9, now }) {
-  const mesh = new THREE.Mesh(
-    new THREE.SphereGeometry(size, 10, 8),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: fade, depthWrite: false })
-  );
+  const mesh = new THREE.Mesh(puffGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: fade, depthWrite: false }));
   mesh.position.copy(at);
+  mesh.scale.setScalar(size * grow[0]);
   mesh.raycast = () => {};
   pir.effects.add(mesh);
-  pir.shots.push({ kind: 'puff', mesh, start: now, life, grow, fade });
+  pir.shots.push({ kind: 'puff', mesh, start: now, life, size, grow, fade });
 }
 
 function fire(pir, raid, blocked, now) {
@@ -399,13 +409,15 @@ function fire(pir, raid, blocked, now) {
   const to = new THREE.Vector3((Math.random() - 0.5) * (SHIP.length - 8), 1.2, raid.side * (SHIP.width / 2 + 0.3));
   puff(pir, from, { color: '#ffb347', size: 0.5, grow: [0.6, 2.2], life: 220, fade: 1, now });
   puff(pir, from, { color: '#8a8580', size: 0.7, grow: [0.8, 3.5], life: 1300, fade: 0.6, now });
-  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.18, 10, 8), new THREE.MeshStandardMaterial({ color: '#1d1b22' }));
+  const ball = new THREE.Mesh(ballGeo, ballMat);
   ball.raycast = () => {};
   pir.effects.add(ball);
   pir.shots.push({ kind: 'ball', mesh: ball, start: now, life: 450, from: from.clone(), to });
   play('mechanic_cannonball_rack_clunk', 0.8);
-  // Where it lands, a moment later.
-  setTimeout(() => {
+  // Where it lands, a moment later (unless we left the ship meanwhile:
+  // resetPirateEffects calls the landing off).
+  const landing = setTimeout(() => {
+    pir.landings.delete(landing);
     const at = performance.now();
     if (blocked) puff(pir, to, { color: '#7fd4ff', size: 0.8, grow: [0.5, 2.6], life: 450, fade: 0.55, now: at });
     else {
@@ -414,6 +426,7 @@ function fire(pir, raid, blocked, now) {
       play('engineer_lever_clunk', 0.9);
     }
   }, 450);
+  pir.landings.add(landing);
 }
 
 // Back at the menu: a new session starts without old news, and nothing
@@ -425,7 +438,9 @@ export function resetPirateEffects(world) {
   if (!pir) return;
   for (const entry of pir.boarders.values()) entry.root.removeFromParent();
   pir.boarders.clear();
-  for (const shot of pir.shots) shot.mesh.removeFromParent();
+  for (const shot of pir.shots) clearShot(shot);
   pir.shots.length = 0;
+  for (const landing of pir.landings) clearTimeout(landing);
+  pir.landings.clear();
   pir.holder.visible = false;
 }

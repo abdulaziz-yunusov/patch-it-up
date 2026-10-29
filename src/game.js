@@ -45,7 +45,7 @@ export const ROOM_LABEL = { engine: 'engine room', power: 'power room', helm: 'h
 const STATION_ROOM = { stoke: 'engine', power: 'power', powerDown: 'power', steam: 'power', wheel: 'helm' };
 const NEXT_ROOMS = { engine: ['power'], power: ['engine', 'helm'], helm: ['power'] };
 
-// The rooms stand in a row along x, with bulkheads at x = -4 and 4.
+// The rooms stand in a row along x, with bulkheads at x = -ROOM_HALF and ROOM_HALF.
 export const roomAt = (x) => (x < -ROOM_HALF ? 'engine' : x > ROOM_HALF ? 'helm' : 'power');
 const pirateIn = (room) => Object.values(state.raid.boarders).some((b) => roomAt(b.x) === room);
 export const hookCount = () => (state.raid.phase === 'alongside' ? Object.keys(state.raid.hooks).length : 0);
@@ -510,7 +510,7 @@ export function pickUpKit(player) {
 }
 
 // Where a dropped kit may lie: inside the hull, in the room you stand in,
-// a little clear of every wall (the bulkheads stand at x = -4 and 4).
+// a little clear of every wall (the bulkheads stand at x = ±ROOM_HALF).
 const ROOM_X = { engine: [-SHIP.length / 2, -ROOM_HALF], power: [-ROOM_HALF, ROOM_HALF], helm: [ROOM_HALF, SHIP.length / 2] };
 const KIT_CLEAR = SHIP.thickness / 2 + 0.3;
 function kitSpot(x, z) {
