@@ -1,10 +1,11 @@
 ﻿import { defineConfig } from 'vite';
-import basicSsl from '@vitejs/plugin-basic-ssl';
+import mkcert from 'vite-plugin-mkcert';
 
 // base = the GitHub repo name, so the game works on GitHub Pages.
-// basicSsl = HTTPS on the local network, so the microphone works
-// when friends test from another PC or phone (npm run host).
+// mkcert = HTTPS with a certificate this PC trusts (no "not secure"
+// warning), so the microphone works when friends test from another PC
+// or phone (npm run host). Other devices must trust the mkcert root CA.
 export default defineConfig({
   base: '/patch-it-up/',
-  plugins: [basicSsl()],
+  plugins: [mkcert()],
 });

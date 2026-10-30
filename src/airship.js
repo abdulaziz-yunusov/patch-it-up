@@ -12,10 +12,14 @@ import * as THREE from 'three';
 import { SHIP } from './world.js';
 import { mesh, paint, stretch } from './harbour.js';
 
-// A little longer than the hull (36 m over 30), so it grows with her: the
-// fins and tail propeller stay aft of the cabin, the rigging under the bag.
-export const ENVELOPE = { length: SHIP.length * 1.2, radius: 6.1, y: 10.7 };
+// Half as long again as the hull (45 m over 30) and fat with it, so she
+// reads as a real airship, a big bag over a small cabin, and grows with
+// the hull. Its belly hangs 1.6 m clear of the roof (3.2 m) for the rigging.
+export const ENVELOPE = { length: SHIP.length * 1.5, radius: 7.8, y: 12.6 };
 const HALF = ENVELOPE.length / 2;
+// The fins, engines and propellers were drawn for a 6.1 m bag: they grow
+// in step, so they keep their proportions.
+const S = ENVELOPE.radius / 6.1;
 
 // Radius along the length, u from -1 (tail) to 1 (nose).
 function radiusAt(u) {
@@ -68,26 +72,95 @@ function paintFabric(g, W, H) {
     g.fillStyle = 'rgba(90, 40, 15, 0.35)';
     g.fillRect(0, H * (1 - v) - 3, W, 6);
   }
-  // stitched patches
-  const patch = (u, v, w, h, color, tilt) => {
+  // Stitched patches: she lives up to her name, so they are the loudest
+  // thing on her. Odd scraps of whatever cloth was to hand (denim, tartan,
+  // ticking, canvas, polka dots), big, raised a little off the bag, with
+  // cream thread. The canvas is stretched about 1.8 times more round the
+  // bag than along it, so a patch is drawn wide to come out squarish.
+  // Clear of the name bands (u 0.21 to 0.29 and 0.71 to 0.79).
+  const cloth = {
+    denim: (w, h) => {
+      g.fillStyle = '#4a6fa5';
+      g.fillRect(-w / 2, -h / 2, w, h);
+      g.strokeStyle = 'rgba(255, 255, 255, 0.14)';
+      g.lineWidth = 2;
+      for (let x = -w; x < w; x += 7) {
+        g.beginPath();
+        g.moveTo(x, -h / 2);
+        g.lineTo(x + h, h / 2);
+        g.stroke();
+      }
+    },
+    tartan: (w, h) => {
+      g.fillStyle = '#b8423a';
+      g.fillRect(-w / 2, -h / 2, w, h);
+      g.fillStyle = 'rgba(40, 20, 30, 0.35)';
+      for (let x = -w / 2; x < w / 2; x += 34) g.fillRect(x, -h / 2, 12, h);
+      for (let y = -h / 2; y < h / 2; y += 20) g.fillRect(-w / 2, y, w, 7);
+      g.fillStyle = 'rgba(255, 210, 90, 0.6)';
+      for (let x = -w / 2 + 22; x < w / 2; x += 34) g.fillRect(x, -h / 2, 2, h);
+    },
+    ticking: (w, h) => {
+      g.fillStyle = '#f1e4c4';
+      g.fillRect(-w / 2, -h / 2, w, h);
+      g.fillStyle = '#5f8a52';
+      for (let y = -h / 2 + 4; y < h / 2; y += 14) g.fillRect(-w / 2, y, w, 5);
+    },
+    canvas: (w, h) => {
+      g.fillStyle = '#d8b27a';
+      g.fillRect(-w / 2, -h / 2, w, h);
+      g.strokeStyle = 'rgba(90, 55, 20, 0.18)';
+      g.lineWidth = 1;
+      for (let x = -w / 2; x < w / 2; x += 4) {
+        g.beginPath();
+        g.moveTo(x, -h / 2);
+        g.lineTo(x, h / 2);
+        g.stroke();
+      }
+    },
+    dots: (w, h) => {
+      g.fillStyle = '#e9c13f';
+      g.fillRect(-w / 2, -h / 2, w, h);
+      g.fillStyle = '#7a3b16';
+      for (let y = -h / 2 + 8; y < h / 2; y += 16) {
+        for (let x = -w / 2 + ((y / 16) % 2 ? 10 : 20); x < w / 2; x += 20) {
+          g.beginPath();
+          g.arc(x, y, 3.5, 0, Math.PI * 2);
+          g.fill();
+        }
+      }
+    },
+  };
+  const patch = (u, v, w, h, kind, tilt) => {
     g.save();
     g.translate(u * W, (1 - v) * H);
     g.rotate(tilt);
-    g.fillStyle = color;
-    g.fillRect(-w / 2, -h / 2, w, h);
-    g.strokeStyle = '#4a2a12';
+    // a soft shadow under it, so it sits on the bag rather than in it
+    g.fillStyle = 'rgba(70, 25, 5, 0.35)';
+    g.fillRect(-w / 2 + 4, -h / 2 + 5, w, h);
+    g.beginPath();
+    g.rect(-w / 2, -h / 2, w, h);
+    g.clip();
+    cloth[kind](w, h);
+    g.strokeStyle = 'rgba(50, 25, 10, 0.7)';
     g.lineWidth = 3;
-    g.setLineDash([8, 7]);
-    g.strokeRect(-w / 2 + 7, -h / 2 + 7, w - 14, h - 14);
+    g.strokeRect(-w / 2 + 1.5, -h / 2 + 1.5, w - 3, h - 3);
+    g.strokeStyle = '#fff3d6';
+    g.lineWidth = 4;
+    g.setLineDash([11, 8]);
+    g.strokeRect(-w / 2 + 10, -h / 2 + 10, w - 20, h - 20);
     g.setLineDash([]);
     g.restore();
   };
-  patch(0.08, 0.66, 90, 60, '#c99a5b', 0.2);
-  patch(0.31, 0.3, 70, 70, '#b98a4f', -0.15);
-  patch(0.7, 0.72, 80, 55, '#c99a5b', -0.25);
-  patch(0.94, 0.38, 64, 64, '#d6aa66', 0.3);
-  patch(0.18, 0.86, 54, 44, '#b98a4f', 0.05);
-  patch(0.62, 0.24, 60, 48, '#d6aa66', 0.12);
+  patch(0.62, 0.32, 150, 84, 'tartan', 0.12); // port flank, low: seen from the dock
+  patch(0.66, 0.72, 128, 70, 'denim', -0.18);
+  patch(0.86, 0.46, 140, 76, 'dots', 0.22); // port flank, high
+  patch(0.95, 0.82, 110, 64, 'ticking', -0.1);
+  patch(0.53, 0.55, 120, 66, 'canvas', 0.3); // under the belly
+  patch(0.38, 0.62, 150, 84, 'denim', 0.15); // starboard flank
+  patch(0.35, 0.4, 120, 68, 'ticking', -0.2); // forward of the engine pod (v 0.18)
+  patch(0.13, 0.4, 140, 78, 'tartan', -0.12);
+  patch(0.07, 0.78, 110, 62, 'canvas', 0.25);
   // the name, down both sides (starboard at u 0.25, port at u 0.75)
   const name = (u, angle) => {
     g.save();
@@ -128,17 +201,17 @@ function envelope() {
 // along the root (0 at the trailing edge, 4.2 at the leading), 0 or less.
 // The bag tapers fast under the tail, so the root follows it down rather
 // than leaving the back of the fin hanging in the air.
-const FIN_ROOT = 4.2;
+const FIN_ROOT = 4.2 * S;
 function fin(rand = 0, rootAt = () => 0) {
-  const top = 3.4 + rand;
+  const top = (3.4 + rand) * S;
   const shape = new THREE.Shape();
   shape.moveTo(0, rootAt(0));
   for (let i = 1; i <= 8; i++) {
     const x = (FIN_ROOT * i) / 8;
     shape.lineTo(x, rootAt(x));
   }
-  shape.lineTo(1.2, top);
-  shape.lineTo(-0.4, top);
+  shape.lineTo(1.2 * S, top);
+  shape.lineTo(-0.4 * S, top);
   shape.closePath();
   const geo = new THREE.ExtrudeGeometry(shape, { depth: 0.14, bevelEnabled: true, bevelSize: 0.05, bevelThickness: 0.04, bevelSegments: 2 });
   geo.translate(0, 0, -0.07);
@@ -146,8 +219,8 @@ function fin(rand = 0, rootAt = () => 0) {
   g.add(mesh(geo, paint('#d6453b', { rough: 0.5 })));
   // gold trim along the trailing edge, from the root down on the bag to the tip
   const low = rootAt(0);
-  const trim = mesh(new THREE.BoxGeometry(0.2, top - low + 0.1, 0.24), paint('#ffc93c', { rough: 0.4 }), -0.2, (top + low) / 2, 0);
-  trim.rotation.z = Math.atan2(0.4, top - low); // leaning back with the edge
+  const trim = mesh(new THREE.BoxGeometry(0.2, top - low + 0.1, 0.24), paint('#ffc93c', { rough: 0.4 }), -0.2 * S, (top + low) / 2, 0);
+  trim.rotation.z = Math.atan2(0.4 * S, top - low); // leaning back with the edge
   g.add(trim);
   return g;
 }
@@ -196,39 +269,50 @@ export function buildAirship(world) {
 
   root.add(envelope());
 
-  // brass hoops round the bag, and a cap on the nose (the aft hoop forward
-  // of the engine pods, which reach up to u -0.53)
+  // Brass hoops round the bag (the aft one forward of the engine pods, which
+  // reach up to u -0.53). Each is two straps, over the top and under the
+  // belly, stopping short of the name down each side with a rivet, so no
+  // hoop ever crosses a letter. On the torus, angle 0 is port, PI/2 the top.
+  const brass = paint('#d9a441', { rough: 0.3 });
+  const NAME_GAP = 0.36; // radians either side of each flank: the lettering and a margin
   for (const u of [-0.45, 0, 0.45]) {
-    const r = radiusAt(u);
-    root.add(mesh(new THREE.TorusGeometry(r + 0.04, 0.09, 8, 64).rotateY(Math.PI / 2), paint('#d9a441', { rough: 0.3 }), u * HALF, 0, 0));
+    const r = radiusAt(u) + 0.04;
+    for (const start of [NAME_GAP, Math.PI + NAME_GAP]) {
+      const strap = new THREE.TorusGeometry(r, 0.11, 8, 48, Math.PI - 2 * NAME_GAP).rotateZ(start).rotateY(Math.PI / 2);
+      root.add(mesh(strap, brass, u * HALF, 0, 0));
+      for (const a of [start, start + Math.PI - 2 * NAME_GAP]) {
+        root.add(mesh(new THREE.SphereGeometry(0.2, 12, 8), brass, u * HALF, r * Math.sin(a), -r * Math.cos(a)));
+      }
+    }
   }
-  root.add(mesh(new THREE.SphereGeometry(0.75, 20, 14, 0, Math.PI * 2, 0, Math.PI / 2).rotateZ(-Math.PI / 2), paint('#d9a441', { rough: 0.3 }), HALF - 0.55, 0, 0));
-  root.add(mesh(new THREE.ConeGeometry(0.22, 0.7, 12).rotateZ(-Math.PI / 2), paint('#d9a441', { rough: 0.3 }), HALF + 0.25, 0, 0));
+  root.add(mesh(new THREE.SphereGeometry(0.75 * S, 20, 14, 0, Math.PI * 2, 0, Math.PI / 2).rotateZ(-Math.PI / 2), brass, HALF - 0.55 * S, 0, 0));
+  root.add(mesh(new THREE.ConeGeometry(0.22 * S, 0.7 * S, 12).rotateZ(-Math.PI / 2), brass, HALF + 0.25 * S, 0, 0));
 
   // tail fins: top, bottom, port, starboard
-  const finX = -HALF + 4.6;
-  const finBase = radiusAt((finX - 1) / HALF) - 0.6;
+  const finX = -HALF + 4.6 * S;
+  const finBase = radiusAt((finX - S) / HALF) - 0.6;
   // Sunk 0.4 m into the bag all along the root, never higher than the base.
-  const finRoot = (x) => Math.min(0, radiusAt((finX - 3.8 + x) / HALF) - 0.4 - finBase);
+  const finRoot = (x) => Math.min(0, radiusAt((finX - 3.8 * S + x) / HALF) - 0.4 - finBase);
   for (const [angle, extra] of [[0, 0.6], [Math.PI, -0.4], [Math.PI / 2, 0], [-Math.PI / 2, 0]]) {
     const f = fin(extra, finRoot);
     const holder = new THREE.Group();
     holder.position.x = finX;
     holder.rotation.x = angle;
-    f.position.set(-3.8, finBase, 0);
+    f.position.set(-3.8 * S, finBase, 0);
     holder.add(f);
     root.add(holder);
   }
   // a flag on the top fin
-  const flag = mesh(new THREE.PlaneGeometry(1.6, 0.9, 10, 3).translate(0.8, 0, 0), paint('#ffc93c', { side: THREE.DoubleSide, rough: 0.9 }), finX - 4.1, radiusAt((finX - 1) / HALF) + 3.8, 0);
+  const flagY = radiusAt((finX - S) / HALF) + 3.8 * S;
+  const flag = mesh(new THREE.PlaneGeometry(1.6 * S, 0.9 * S, 10, 3).translate(0.8 * S, 0, 0), paint('#ffc93c', { side: THREE.DoubleSide, rough: 0.9 }), finX - 4.1 * S, flagY, 0);
   flag.rotation.y = Math.PI;
   flag.userData.rest = Float32Array.from(flag.geometry.attributes.position.array);
   root.add(flag);
-  root.add(mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.4, 6), paint('#3e4a5c'), finX - 4.1, radiusAt((finX - 1) / HALF) + 3.4, 0));
+  root.add(mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.4 * S, 6), paint('#3e4a5c'), finX - 4.1 * S, flagY - 0.4 * S, 0));
 
   // the tail propeller
-  const tail = propeller(1.5, 4);
-  tail.position.x = -HALF - 0.3;
+  const tail = propeller(1.5 * S, 4);
+  tail.position.x = -HALF - 0.3 * S;
   tail.rotation.y = Math.PI;
   root.add(tail);
 
@@ -236,18 +320,24 @@ export function buildAirship(world) {
   const pods = [];
   for (const side of [-1, 1]) {
     const pod = enginePod(side);
-    // aft, clear of the name painted amidships
+    pod.scale.setScalar(S);
     const x = -HALF * 0.64;
     const r = radiusAt(x / HALF);
-    pod.position.set(x, -r * 0.45, side * (r + 0.55));
+    pod.position.set(x, -r * 0.45, side * (r + 0.55 * S));
     root.add(pod);
     pods.push(pod.userData.prop);
   }
 
-  // navigation lights: red to port, green to starboard
+  // navigation lights on the cabin's bow corners, where a ship carries
+  // them: red to port, green to starboard, each in a brass cup on a bracket
   const navs = [];
+  const navY = SHIP.wallHeight - 0.15 - ENVELOPE.y; // ship space 2.85 m, under the roof rail
+  const navX = SHIP.length / 2 + 0.25;
   for (const [side, color] of [[-1, '#ff3b3b'], [1, '#3bff7a']]) {
-    const light = mesh(new THREE.SphereGeometry(0.16, 12, 10), new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.6 }), 4, -1.2, side * (radiusAt(4 / HALF) + 0.05), { shadow: false });
+    const z = side * (SHIP.width / 2 + 0.3);
+    root.add(mesh(new THREE.BoxGeometry(0.36, 0.06, 0.06), paint('#4d5566'), navX - 0.15, navY - 0.2, z - side * 0.12));
+    root.add(mesh(new THREE.CylinderGeometry(0.2, 0.14, 0.14, 14), brass, navX, navY - 0.22, z));
+    const light = mesh(new THREE.SphereGeometry(0.2, 14, 10), new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.6 }), navX, navY, z, { shadow: false });
     root.add(light);
     navs.push(light);
   }

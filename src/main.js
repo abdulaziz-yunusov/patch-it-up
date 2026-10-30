@@ -8,6 +8,7 @@ import { buildHarbour, updateHarbour } from './harbour.js';
 import { dressCabin, updateCabin } from './cabin.js';
 import { styleInterior } from './interior.js';
 import { buildAirship, updateAirship } from './airship.js';
+import { buildHull } from './hull.js';
 import { loadHelmModel, updateHelm, resetHelmEffects } from './helm.js';
 import { loadPowerModel, updatePower, resetPowerEffects } from './power.js';
 import { loadEngineModel, updateEngineRoom, resetEngineEffects } from './engine.js';
@@ -110,6 +111,7 @@ loadPowerModel(world); // furnishes the engineer's power room
 loadEngineModel(world); // furnishes the mechanic's engine room
 styleInterior(world); // planks, trim and panelling on the hull
 buildAirship(world); // the envelope overhead: panels, patches, fins, engines, rigging
+buildHull(world); // the cabin from outside: planked belly and prow, rails, room colours, portholes
 dressCabin(world); // ribs, pipes, gauges, cables, portholes, books: the rooms' details
 buildPirates(world); // the sky pirates' ship, crew, grapples and boarders
 
@@ -777,8 +779,18 @@ addEventListener('pagehide', () => {
   if (sessionActive && local.isHost) net.close();
 });
 
-player.controls.addEventListener('lock', () => (lockOverlay.hidden = true));
+// The controls line at the bottom: a few seconds after the mouse is taken,
+// then it fades out of the way, back again whenever the mouse is freed.
+const CONTROLS_HINT_MS = 6000;
+let controlsHintTimer = 0;
+player.controls.addEventListener('lock', () => {
+  lockOverlay.hidden = true;
+  clearTimeout(controlsHintTimer);
+  controlsHintTimer = setTimeout(() => document.body.classList.add('controls-faded'), CONTROLS_HINT_MS);
+});
 player.controls.addEventListener('unlock', () => {
+  clearTimeout(controlsHintTimer);
+  document.body.classList.remove('controls-faded');
   if (sessionActive && state.phase !== 'result' && !trainingFinished()) lockOverlay.hidden = false;
 });
 document.getElementById('skipLesson').addEventListener('click', () => {
