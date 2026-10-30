@@ -414,6 +414,11 @@ button.big {
   line-height: 1.5;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
   font-size: calc(16px * var(--hud-scale, 1));
+  transition: opacity 0.8s;
+}
+
+.controls-faded .hud {
+  opacity: 0;
 }
 
 #lobby,
